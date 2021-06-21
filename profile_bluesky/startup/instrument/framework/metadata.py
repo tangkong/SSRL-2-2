@@ -19,12 +19,12 @@ from .initialize import RE
 
 # Set up default metadata
 
-RE.md['beamline_id'] = 'SSRL 1-5 HiTp'
+RE.md['beamline_id'] = 'SSRL 2-2 Continuous XAS'
 RE.md['proposal_id'] = 'testing'
 RE.md['pid'] = os.getpid()
 
 HOSTNAME = socket.gethostname() or 'localhost' 
-USERNAME = getpass.getuser() or 'SSRL 1-5 HiTp user' 
+USERNAME = getpass.getuser() or 'SSRL 2-2 user' 
 RE.md['login_id'] = USERNAME + '@' + HOSTNAME
 
 # useful diagnostic to record with all data

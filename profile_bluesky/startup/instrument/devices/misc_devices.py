@@ -4,7 +4,7 @@ Miscellaneous devices
 __all__ = ['shutter', 'I1', 'I0', 'lrf', 'table_trigger', 'table_busy',
             'filter1', 'filter2', 'filter3', 'filter4']
 
-from ophyd import EpicsSignalRO, EpicsSignal
+from ophyd import EpicsSignalRO, EpicsSignal, Device, Component as Cpt
 
 shutter = EpicsSignal('BL00:RIO.DO00', name='FastShutter')
 I1 = EpicsSignalRO('BL00:RIO.AI2', name='I1')

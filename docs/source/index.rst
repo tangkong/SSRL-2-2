@@ -1,13 +1,13 @@
-Welcome to SSRL-1-5's documentation!
+Welcome to SSRL-2-2's documentation!
 =========================================
 
 This code is a collection of objects and plans useful for data collection at 
-SSRL 1-5.  
+SSRL 2-2.  
 
 If you encounter any bugs or would like any additional functionality, please 
 submit an issue_.
 
-.. _issue: https://github.com/tangkong/SSRL-1-5/issues
+.. _issue: https://github.com/tangkong/SSRL-X-X/issues
 .. can also do: `issue <https://github.com/tangkong/SSRL-1-5/issues>`__ .
 
 

@@ -70,8 +70,8 @@ def filter_opt_count(det, target_count=100000, md={}):
 
 
     # gather filter information and solve 
-    filter_status = [int(filter1.get()/5), int(filter2.get()/5), 
-                        int(filter3.get()/5), int(filter4.get()/5)]
+    filter_status = [round(filter1.get()/5), round(filter2.get()/5), 
+                        round(filter3.get()/5), round(filter4.get()/5)]
     print(filter_status)
     filter_status = [not e for e in filter_status]
     new_filters = solve_filter_setup(filter_status, curr_counts, target_count)
@@ -84,7 +84,7 @@ def filter_opt_count(det, target_count=100000, md={}):
     filter3.put(new_filters[2]*4.9)
     filter4.put(new_filters[3]*4.9)
     
-    yield from bp.trigger_and_read([det, filter1, filter2, filter3, filter4])
+    yield from bps.trigger_and_read([det, filter1, filter2, filter3, filter4])
 
     # close out run
     yield from bps.close_run()
@@ -93,7 +93,7 @@ def filter_opt_count(det, target_count=100000, md={}):
 
 
 def solve_filter_setup(curr_filters, curr_counts, target_counts, 
-                        x=filter_thicks, mu=0.2):
+                        x=filter_thicks, mu=0.8):
     """solve_filter_setup 
     
     Return filter setup given filter thicknesses (x), and attenuation coeff (mu)

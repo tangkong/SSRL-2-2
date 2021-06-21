@@ -12,7 +12,7 @@ import os, sys
 
 def get_md_path():
     md_dir_name = "Bluesky_RunEngine_md"
-    if os.environ == "win32":
+    if sys.platform == "win32":
         home = os.environ["LOCALAPPDATA"]
         path = os.path.join(home, md_dir_name)
     else:       # at least on "linux"

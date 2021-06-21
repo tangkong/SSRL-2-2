@@ -307,7 +307,12 @@ def tablev_scan():
     '''
     yield from bps.mv(table_trigger, 0) # start tablev_scan
     yield from bps.sleep(1)
-    
+
+    if I0.get() < 0.01: # If we don't have beam
+        print('No beam, aborting...')
+        yield from bps.mv(table_trigger, 1) # end tablev_scan
+        return
+
     # sleep until we see the busy signal go high
     cnt = 0
     while (table_busy.read()[table_busy.name]['value'] < 0.5) and cnt < 100: 
@@ -317,3 +322,107 @@ def tablev_scan():
 
     # Turn off trigger signal
     yield from bps.mv(table_trigger, 1)
+
+def tuned_mesh_grid_scan(AD, mot1, s1, f1, int1, mot2, s2, f2, int2, 
+            radius, ROI=1, pin=None, skip=0, md=None):
+    '''
+    Attempt to be intelligent about which points on a grid are scanned
+    Tune within per_step plan based on signal from xsp3 roi.  
+        - scan with xsp3
+        - find peak location
+        - move to peak location
+        - collect AD
+    AD must be some area detector 
+    '''
+    raise NotImplementedError
+
+    # Add other relevant detectors
+    if I0 not in dets:
+        dets.append(I0)
+    if I1 not in dets:
+        dets.append(I1)
+
+    # Determine points for meshgrid 
+    # Verification (check non-negative, motors are motors, non-zero steps?)
+    if (s1 >= f1) or (s2 >= f2):
+        raise ValueError('starting bounds must be less than end bounds')
+    # Basic plan logic
+    ## Define new bounds
+    if not pin: # no pinning tuple provided
+        pin = (mot1.position, mot2.position) 
+
+    if (pin[0] < s1) or (f1 < pin[0]) or (pin[1] < s2) or (f2 < pin[1]):
+        raise ValueError('pin location not inside defined grid')
+
+    ## subtract fraction of interval to account for edges
+    s1_new = np.arange(pin[0], s1-int1/2, -int1)[-1]
+    f1_new = np.arange(pin[0], f1+int1/2, int1)[-1]
+
+    s2_new = np.arange(pin[1], s2-int2/2, -int2)[-1]
+    f2_new = np.arange(pin[1], f2+int2/2, int2)[-1]
+
+    ## add half of interval to include endpoints if interval is perfect
+    num1 = len(np.arange(s1_new, f1_new+int1/2, int1))
+    num2 = len(np.arange(s2_new, f2_new+int2/2, int2))
+    
+    center = (s1+(f1-s1)/2, s2+(f2-s2)/2)
+
+    motor_args = list([mot1, s1_new, f1_new, num1, 
+                        mot2, s2_new, f2_new, num2, False])
+
+    # metadata addition
+    _md = {'radius': radius}
+    _md.update(md or {})
+
+    # parameters for _refine_scan
+    peak_stats = PeakStats(x=motor.name, y=signal.name)
+
+    # start plans
+    @subs_decorator(peak_stats)
+    def _refine_scan(md=None):
+
+        yield from bp.rel_scan([signal], motor, -width/2, width/2, num)
+
+        # Grab final position from subscribed peak_stats
+        valid_peak = peak_stats.max[-1] >= (4 * peak_stats.min[-1])
+        if peak_stats.max is None:
+            valid_peak = False
+
+        final_position = 0
+        if valid_peak: # Condition for finding a peak
+            if peak_choice == 'cen':
+                final_position = peak_stats.cen
+            elif peak_choice == 'com':
+                final_position = peak_stats.com
+
+        yield from bps.mv(motor, final_position)
+
+
+    # inject logic via per_step 
+    class stateful_per_step:
+        
+        def __init__(self, skip):
+            self.skip = skip
+            self.cnt = 0
+            #print(self.skip, self.cnt)
+
+        def __call__(self, detectors, step, pos_cache):
+            """
+            has signature of bps.one_and_step, but with added logic of skipping 
+            a point if it is outside of provided radius
+            """
+            if self.cnt < self.skip: # if not enough skipped
+                self.cnt += 1
+                pass
+            else:
+                # rel_scan and refine
+                yield from _refine_scan()
+                # acquire
+                yield from bps.one_nd_step(detectors, step, pos_cache)
+
+    per_stepper = stateful_per_step(skip)
+
+    # Skip points if need
+    newGen = bp.grid_scan(detectors, *motor_args, 
+                            per_step=per_stepper, md=_md)
+    return (yield from newGen)

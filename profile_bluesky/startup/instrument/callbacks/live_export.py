@@ -91,7 +91,7 @@ def tiff_factory(name, start_doc):
 assert 'AD_TIFF' in hands
 tiff_rr = RunRouter([tiff_factory])
 
-callback_db['tiff_rr'] = RE.subscribe(tiff_rr)
+# callback_db['tiff_rr'] = RE.subscribe(tiff_rr)
 
 def meta_factory(name, start_doc):
     serializer = sj.Serializer( 
@@ -104,4 +104,4 @@ def meta_factory(name, start_doc):
 
 meta_rr = RunRouter([meta_factory])
 
-callback_db['meta_rr'] = RE.subscribe(meta_rr)
+# callback_db['meta_rr'] = RE.subscribe(meta_rr)
