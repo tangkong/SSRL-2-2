@@ -95,15 +95,15 @@ class CXASFlyer(FPGABox, FlyerInterface):
             config_attrs = ['trigger_width', 'trigger_base_rate']
         if read_attrs is None: 
             read_attrs = []
-        super().__init__(prefix, **kwargs) # config attrs kinda broken at the moment?  Disabling works
-                            #read_attrs=read_attrs, **kwargs)
+        super().__init__(prefix, **kwargs) 
+            # config attrs kinda broken at the moment?  Disabling works
+                            #configuration_attrs=config_attrs, read_attrs=read_attrs, **kwargs)
 
     def kickoff(self):
         logger.info("kickoff()")
-        print('kickoff()')
         self.kickoff_status = ophyd.DeviceStatus(self)
         self.complete_status = ophyd.DeviceStatus(self)
-
+        
         # initialize parameters
         self.num_frames         = np.zeros(1, np.uint32)
         self.num_adc            = np.zeros(1, np.uint32)
@@ -137,8 +137,6 @@ class CXASFlyer(FPGABox, FlyerInterface):
         self.encoder     = np.zeros(self.num_frames * self.num_encoder, np.uint32)
         self.gate        = np.zeros(self.num_frames, np.uint32)
         self.time        = np.zeros(self.num_frames, np.uint32)
-        print('k', self.time)
-        print('k', self.num_frames)
 
         # initialize data format for describe_collect(), collect()
         self.buffer_dict = [] # will store event dictionaries
@@ -160,10 +158,12 @@ class CXASFlyer(FPGABox, FlyerInterface):
             return
 
         # Kickoff activity here. Set up activity that runs when PV's update
-        self.trigger_signal.subscribe(self._trigger_changed) 
+        # sub before to make sure we don't miss any data?
         self.data.subscribe(self._data_update)
+        self.trigger_signal.put(2)
+        # for some reason, callback fires once sub'd, so place after
+        self.trigger_signal.subscribe(self._trigger_changed) 
 
-        self.trigger_signal.put(2) # enable continuous scanning
         # once started, notify by updating status object
         self.kickoff_status._finished(success=True)
 
@@ -171,12 +171,17 @@ class CXASFlyer(FPGABox, FlyerInterface):
 
     def _trigger_changed(self, value=None, old_value=None, **kwargs):
         "This is called when the 'trigger_signal' changes."
+        logger.info(f'_trigger_changed(), {old_value}->{value}')
         if self.complete_status is None:
             return
         if old_value > value: #(old_value == 1 or 2) and (value == 0):
             # Negative-going edge means an acquisition just finished.
             self.complete_status._finished()
-            self.complete_status = None # wrap up for next run
+            #self.complete_status = None # wrap up for next run
+            #self.kickoff_status = None
+            # remove callbacks, could do this in unstage(), but wait to gather more tasks?
+            self.data.unsubscribe_all()
+            self.trigger_signal.unsubscribe_all()
     
     def _data_update(self, value=None, timestamp=None, **kwargs):
         logging.info('_data_update()')
@@ -291,30 +296,17 @@ class CXASFlyer(FPGABox, FlyerInterface):
             dtype = 'number', 
             shape = []
         )
+       
+        # construct the schema
+        dd = {}
+        dd.update({'time':d})
+        dd.update({'gate':d})
+        dd.update({f'motor_{i}':d for i in range(self.num_motor.item())})
+        dd.update({f'adc_{i}':d for i in range(self.num_adc.item())})
+        dd.update({f'encoder_{i}':d for i in range(self.num_encoder.item())})
+        dd.update({f'counter_{i}':d for i in range(self.num_counter.item())})
         
-        
-        self.desc = {self.name:   # hard code for now to check
-                        dict(
-                            time=d, 
-                            gate=d,
-                            motor_0=d,
-                            motor_1=d,
-                            motor_2=d,
-                            motor_3=d,
-                            adc_0=d,
-                            adc_1=d,
-                            adc_2=d,
-                            adc_3=d,
-                            adc_4=d,
-                            adc_5=d,
-                            adc_6=d,
-                            adc_7=d,
-                            encoder_0=d,
-                            encoder_1=d,
-                            encoder_2=d,
-                            encoder_3=d,
-                            )
-                    }
+        self.desc = {self.name: dd}
 
     def describe_collect(self):
         """
