@@ -1,14 +1,292 @@
+import threading 
+import logging
+import time
+from pathlib import Path
+import ctypes
+
+import numpy as np
+
 from bluesky.plans import fly, count
 from bluesky.preprocessors import fly_during_decorator
-from ophyd.signal import EpicsSignalRO
 
+import ophyd
+from ophyd import Device
+from ophyd.signal import EpicsSignal
 from ophyd.sim import det
+from ophyd.flyers import FlyerInterface
+
+logger = logging.getLogger()
+
+so_path = Path.cwd() / 'fpga_eval' / 'omFpgaEval.so'
+fpga_eval_lib = ctypes.cdll.LoadLibrary(so_path)
+
+# C# helper functions to decode PV
+class FpgaFrameInfo(ctypes.Structure):
+    _fields_ =    [ ("lenData",     ctypes.c_uint),
+                    ("data",        ctypes.POINTER(ctypes.c_int)),
+
+                    ("self.num_frames",   ctypes.POINTER(ctypes.c_uint)),
+                    
+                    ("numAdc",      ctypes.POINTER(ctypes.c_uint)),
+                    ("numCounter",  ctypes.POINTER(ctypes.c_uint)),
+                    ("numEncoder",  ctypes.POINTER(ctypes.c_uint)),
+                    ("numMotor",    ctypes.POINTER(ctypes.c_uint)),
+                    
+                    ("lastErrorCode", ctypes.POINTER(ctypes.c_uint))]
+
+                    
+class FpgaFrameData(ctypes.Structure):
+    _fields_ =    [ ("lenData",     ctypes.c_uint),
+                    ("data",        ctypes.POINTER(ctypes.c_int)),
+
+                    ("self.num_frames",   ctypes.POINTER(ctypes.c_uint)),
+                    
+                    ("numAdc",      ctypes.POINTER(ctypes.c_uint)),
+                    ("numCounter",  ctypes.POINTER(ctypes.c_uint)),
+                    ("numEncoder",  ctypes.POINTER(ctypes.c_uint)),
+                    ("numMotor",    ctypes.POINTER(ctypes.c_uint)),
+
+                    ("adc",         ctypes.POINTER(ctypes.c_uint)),
+                    ("counter",     ctypes.POINTER(ctypes.c_uint)),
+                    ("motor",       ctypes.POINTER(ctypes.c_uint)),    
+                    ("encoder",     ctypes.POINTER(ctypes.c_uint)),
+
+                    ("gate",        ctypes.POINTER(ctypes.c_uint)),
+                    ("time",        ctypes.POINTER(ctypes.c_uint)),
+                    
+                    ("lastErrorCode", ctypes.POINTER(ctypes.c_uint))]
+
+# Based off of implementations by: 
+# https://blueskyproject.io/tutorials/Flyer%20Basics.html
+# https://github.com/NSLS-II/sirepo-bluesky/blob/7173258e7570904295bfcd93d5bca3dcc304c15c/sirepo_bluesky/sirepo_flyer.py
+# https://github.com/thomascobb/bluefly/blob/0ee7ea837d5f74e3cdc69e2315e9beed28dd7766/bluefly/fly.py#L36
+class CXASFlyer(Device, FlyerInterface):
+    """CXASFlyer continuous x-ray spectroscopy flyer device
+    Here lies jank, reader beware.
+
+    flyer = CXASFlyer(name='flyer')
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__('', parent=None, **kwargs)
+        
+        # Make status objects accessible by all methods
+        self.kickoff_status = None
+        self.complete_status = None
+        self.t0 = time.time()
+        self.last_update_time = None
+        self.trig = EpicsSignal('BL22:SCAN:MASTER.TRIG', name='trigger')
+        self.data = EpicsSignal('BL22:SCAN:MASTER.DATA', name='data')
+
+        # TO-DO: configuration PV's to keep track of, for derived data
+
+        print('initialized')
+
+    def kickoff(self):
+        logger.info("kickoff()")
+        print('kickoff()')
+        self.kickoff_status = ophyd.DeviceStatus(self)
+        self.complete_status = ophyd.DeviceStatus(self)
+
+        # initialize parameters
+        self.num_frames         = np.zeros(1, np.uint32)
+        self.num_adc            = np.zeros(1, np.uint32)
+        self.num_counter        = np.zeros(1, np.uint32)
+        self.num_encoder        = np.zeros(1, np.uint32)
+        self.num_motor          = np.zeros(1, np.uint32)
+        self.last_error_code    = np.zeros(1, np.uint32)
+
+        pv_data = self.data.get() # array of ints
+
+        # get info from the FPGA box and record
+        fpgaFrameInfo = FpgaFrameInfo(0,
+                                np.ctypeslib.as_ctypes(pv_data),
+                                
+                                np.ctypeslib.as_ctypes(self.num_frames),
+                                
+                                np.ctypeslib.as_ctypes(self.num_adc),
+                                np.ctypeslib.as_ctypes(self.num_counter),
+                                np.ctypeslib.as_ctypes(self.num_encoder),
+                                np.ctypeslib.as_ctypes(self.num_motor),
+                                # 1 for success
+                                np.ctypeslib.as_ctypes(self.last_error_code))
+
+        fpga_eval_lib.GetFpgaFrameInfo.restype = None
+        fpga_eval_lib.GetFpgaFrameInfo(ctypes.byref(fpgaFrameInfo)) 
+
+        # initialize data 
+        self.adc         = np.zeros(self.num_frames * self.num_adc, np.uint32)
+        self.counter     = np.zeros(self.num_frames * self.num_counter, np.uint32)
+        self.motor       = np.zeros(self.num_frames * self.num_motor, np.uint32)
+        self.encoder     = np.zeros(self.num_frames * self.num_encoder, np.uint32)
+        self.gate        = np.zeros(self.num_frames, np.uint32)
+        self.time        = np.zeros(self.num_frames, np.uint32)
+
+        # initialize data format for describe_collect(), collect()
+        self.buffer_dict = [] # will store event dictionaries
+
+        self._setup_describe_collect() # given info dataframe
+        
+        # Don't block RunEngine thread, construct a different one
+        thread = threading.Thread(target=self.my_activity, daemon=True)
+        thread.start()
+
+        return self.kickoff_status
+
+    def my_activity(self):
+        """ Main activity """
+        logger.info('activity()')
+        if self.complete_status is None: 
+            # I assume if activity gets called before kickoff initializes complete_status
+            logger.info('leaving activity() - not complete')
+            return
+
+        # Kickoff activity here. Set up activity that runs when PV's update
+        self.trig.put(2) # enable continuous scanning
+        self.trig.subscribe(self._trigger_changed) 
+        self.data.subscribe(self._data_update)
+
+        # once started, notify by updating status object
+        self.kickoff_status._finished(success=True)
+
+        # Wait for completion, leave this to the _trigger_changed method
+
+    def _trigger_changed(self, value=None, old_value=None, **kwargs):
+        "This is called when the 'trigger' signal changes."
+        if self.complete_status is None:
+            return
+        if old_value > value: #(old_value == 1) and (value == 0):
+            # Negative-going edge means an acquisition just finished.
+            self.complete_status._finished()
+            self.complete_status = None # wrap up for next run
+
+    def _data_update(self, value=None, timestamp=None, **kwargs):
+        logging.info('_data_update()')
+        pv_data = self.data.get()
+        # parse new frame data
+        fpgaFrameData = FpgaFrameData (	0,
+								np.ctypeslib.as_ctypes(pv_data),
+								
+								np.ctypeslib.as_ctypes(self.num_frames),
+								
+								np.ctypeslib.as_ctypes(self.num_adc),
+								np.ctypeslib.as_ctypes(self.num_counter),
+								np.ctypeslib.as_ctypes(self.num_encoder),
+								np.ctypeslib.as_ctypes(self.num_motor),
+								
+								np.ctypeslib.as_ctypes(self.adc),
+								np.ctypeslib.as_ctypes(self.counter),
+								np.ctypeslib.as_ctypes(self.motor),
+								np.ctypeslib.as_ctypes(self.encoder),
+								
+								np.ctypeslib.as_ctypes(self.gate),
+								np.ctypeslib.as_ctypes(self.time),
+								
+								np.ctypeslib.as_ctypes(self.last_error_code))
+
+        
+
+        # C function call
+        fpga_eval_lib.EvalFpgaData.restype = None
+        fpga_eval_lib.EvalFpgaData(ctypes.byref(fpgaFrameData))
+        
+        # if we don't have a new frame
+        if self.last_update_time == self.time[0]:
+            return # we don't have a new frame
+        else: 
+            self.last_update_time = self.time[0] # remember last update time
+
+        # for each frame in self.frame_num, append to buffer
+        for frame in range(self.num_frames.item()):
+            curr_frame = {}
+            curr_frame.update({'time': self.time[frame]})
+            curr_frame.update({'gate': self.gate[frame]})
+            curr_frame.update({f'adc_{i}': self.adc[frame+i] 
+                                for i in range(self.num_adc.item())})
+            curr_frame.update({f'motor_{i}': self.motor[frame+i] 
+                                for i in range(self.num_motor.item())})
+            curr_frame.update({f'encoder_{i}': self.encoder[frame+i] 
+                                  for i in range(self.num_encoder.item())})
+            curr_frame.update({f'counter_{i}': self.counter[frame+i] 
+                                for i in range(self.num_counter.item())})
+           
+            self.buffer_dict.append(curr_frame)
+
+    def complete(self):
+        logger.info('complete()')
+        if self.complete_status is None:
+            raise RuntimeError("No collection is in progress")
+
+        return self.complete_status
+
+    def _setup_describe_collect(self):
+        """ set up data schema  """
+        # currently only single stream
+        d = dict(
+            source = self.data.pvname,
+            dtype = 'array', 
+            shape = []
+        )
+
+        self.desc = {self.name: { 
+                        'data' : d
+                    }
+        }
+
+    def describe_collect(self):
+        """
+        Describe details for ``collect()`` method
+        """
+        logger.info("describe_collect()")
+        return self.desc
+
+    def collect(self):
+        """
+        Start this Flyer
+        """
+        logger.info("collect()")
+        
+        # yield dictionary to bluesky
+        # clear data dictionary
+        d = self.buffer_dict
+        self.buffer_dict = []
+        for subd in d:
+            yield subd
+            
+import bluesky.plan_stubs as bps
+
+def fly_plan(flyer, *, md=None):
+    """
+    Perform a fly scan with one or more 'flyers'.
+    Slight modification to bluesky.plans.fly, takes only single flyer
+
+    Parameters
+    ----------
+    flyers : collection
+        objects that support the flyer interface
+    md : dict, optional
+        metadata
+
+    Yields
+    ------
+    msg : Msg
+        'kickoff', 'wait', 'complete, 'wait', 'collect' messages
+
+    See Also
+    --------
+    :func:`bluesky.preprocessors.fly_during_wrapper`
+    :func:`bluesky.preprocessors.fly_during_decorator`
+    """
+    uid = yield from bps.open_run(md)
+    
+    yield from bps.kickoff(flyer, wait=True)
+    complete_status = yield from bps.complete(flyer, wait=False)
+    while not complete_status.done:
+        yield from bps.sleep(10) # rate limit @ 40Hz
+        yield from bps.collect(flyer)
+
+    yield from bps.close_run()
+    return uid
 
 
-data_pv = EpicsSignalRO('BL22:SCAN:MASTER.DATA', name='DATA')
-
-def cs_dispatch_plan():
-    print('c# plan')
-    yield from count([det])
-
-
+flyer = CXASFlyer(name='flyer')
