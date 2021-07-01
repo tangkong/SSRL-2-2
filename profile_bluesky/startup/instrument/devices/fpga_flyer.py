@@ -5,6 +5,7 @@ from pathlib import Path
 import ctypes
 
 import numpy as np
+import pandas as pd
 
 from bluesky.plans import fly, count
 from bluesky.preprocessors import fly_during_decorator
@@ -20,8 +21,8 @@ logger = logging.getLogger()
 
 __all__ = ['flyer']
 
-so_path = Path(__file__).parent / 'fpga_eval' / 'omFpgaEval.so'
-fpga_eval_lib = ctypes.cdll.LoadLibrary(so_path)
+so_eval_path = Path(__file__).parent / 'fpga_eval' / 'omFpgaEval.so'
+fpga_eval_lib = ctypes.cdll.LoadLibrary(so_eval_path)
 
 # C# helper functions to decode PV
 class FpgaFrameInfo(ctypes.Structure):
@@ -59,6 +60,39 @@ class FpgaFrameData(ctypes.Structure):
                     
                     ("lastErrorCode", ctypes.POINTER(ctypes.c_uint))]
 
+so_motion_path = Path(__file__).parent / 'fpga_motion' / 'motion.so'
+fpga_motion_lib = ctypes.cdll.LoadLibrary(so_motion_path)
+
+class FpgaTrigger(ctypes.Structure):
+    _fields_ = [    
+                    ("time",            ctypes.POINTER(ctypes.c_double)),
+                    ("energy",            ctypes.POINTER(ctypes.c_double)),
+                    ("timeEnergyLen",    ctypes.c_uint),
+                    
+                    ("trigger",            ctypes.POINTER(ctypes.c_double)),                    
+                    ("triggerLen",        ctypes.POINTER(ctypes.c_uint)),
+                    
+                    ("lastErrorCode",    ctypes.POINTER(ctypes.c_int))]
+                    
+class FpgaMotion(ctypes.Structure):
+    _fields_ = [    ("time",            ctypes.POINTER(ctypes.c_double)),
+                    ("energy",            ctypes.POINTER(ctypes.c_double)),
+                    ("timeEnergyLen",    ctypes.c_uint),
+                    
+                    ("crystalD",        ctypes.c_double),
+                    ("crystalGap",        ctypes.c_double),
+                    ("motorResPhi",        ctypes.c_double),
+                    ("motorResZ",        ctypes.c_double),
+                                        
+                    ("motionPhi",        ctypes.POINTER(ctypes.c_double)),
+                    ("motionPhiLen",    ctypes.POINTER(ctypes.c_uint)),
+                    
+                    ("motionZ",            ctypes.POINTER(ctypes.c_double)),
+                    ("motionZLen",        ctypes.POINTER(ctypes.c_uint)),
+                    
+                    ("lastErrorCode",    ctypes.POINTER(ctypes.c_int))]
+
+
 # Based off of implementations by: 
 # https://blueskyproject.io/tutorials/Flyer%20Basics.html
 # https://github.com/NSLS-II/sirepo-bluesky/blob/7173258e7570904295bfcd93d5bca3dcc304c15c/sirepo_bluesky/sirepo_flyer.py
@@ -74,6 +108,10 @@ class FPGABox(Device):
     trigger_signal = Cpt(EpicsSignal, '.TRIG')
 
     # configuration signals
+    trigger_profile_list = Cpt(EpicsSignal, '.TLST')
+    phi_profile_list = Cpt(EpicsSignal, 'MOTOR1.PLST')
+    z_profile_list = Cpt(EpicsSignal, 'MOTOR3.PLST')
+    z2_profile_list = Cpt(EpicsSignal, 'MOTOR4.PLST')
     trigger_width = Cpt(EpicsSignal, '.TWID')
     trigger_base_rate = Cpt(EpicsSignal, '.TBRT')
 
@@ -330,5 +368,76 @@ class CXASFlyer(FPGABox, FlyerInterface):
         for subd in d:
             yield subd
 
+    def load_trajectory(self, 
+        traj_file_path=Path(__file__).parent / 'fpga_motion' / 'Cu_XANES.tra'):
+
+        traData = pd.read_csv(  traj_file_path,
+                                sep='\t',
+                                skiprows=6,
+                                comment='#',
+                                usecols=[1,2],
+                                names=['sec', 'energy'])
+
+        # hard code, assume positions
+        header = []
+        for _ in range(6):
+            header.append(traj_file_path.readline())
+
+        bragg_start            = header[0].split()[1]
+        bragg_stop            = header[1].split()[1]
+        beam_height_start    = header[2].split()[1]
+        beam_height_stop    = header[3].split()[1]
+        traj_length            = header[5].split()[1]
+
+        self.time_list = traData['sec'].to_numpy()
+        self.energy_list = traData['energy'].to_numpy()
+
+        # initialize variables
+        self.trigger_list           = np.zeros(16384, np.float64)
+        self.motion_phi_list            = np.zeros(16384, np.float64)
+        self.motion_Z_list                = np.zeros(16384, np.float64)
+        self.trigger_len            = np.zeros(1, np.uint32)
+        self.motion_phi_len        = np.zeros(1, np.uint32)
+        self.motion_Z_len            = np.zeros(1, np.uint32)
+        last_error_code        = np.zeros(1, np.int32)
+
+        fpgaTrigger = FpgaTrigger(    np.ctypeslib.as_ctypes(self.time_list),
+                                    np.ctypeslib.as_ctypes(self.energy_list),
+                                    len(time),
+                                    
+                                    np.ctypeslib.as_ctypes(self.trigger_list),
+                                    np.ctypeslib.as_ctypes(self.trigger_len),
+                                    
+                                    np.ctypeslib.as_ctypes(last_error_code))
+                                    
+        # C function call, determine trigger details
+        fpga_motion_lib.restype = None
+        fpga_motion_lib.CalcTrigger(ctypes.byref(fpgaTrigger))
+
+        fpgaMotion = FpgaMotion(    np.ctypeslib.as_ctypes(self.time_list),
+                            np.ctypeslib.as_ctypes(self.energy_list),
+                            len(self.time_list),
+                            
+                            1.9202e-10,        # crystalD        [m]
+                            5,                # crystalGap    [mm]
+                            100000,            # motorPhiRes:    [counts/EGU]        ### please verify
+                            40320,            # motorZRes:    [counts/EGU]        ### please verify
+                            
+                            np.ctypeslib.as_ctypes(self.motion_phi_list),
+                            np.ctypeslib.as_ctypes(self.motion_phi_len),
+                            
+                            np.ctypeslib.as_ctypes(self.motion_Z_list),
+                            np.ctypeslib.as_ctypes(self.motion_Z_len),
+                            
+                            np.ctypeslib.as_ctypes(last_error_code))
+
+        # C function call, calculate trigger details
+        fpga_motion_lib.restype = None
+        fpga_motion_lib.CalcMotion(ctypes.byref(fpgaMotion))
+
+        self.trigger_profile_list.put(self.trigger_list)
+        self.phi_profile_list.put(self.motion_phi_list)
+        self.z_profile_list.put(self.motion_Z_list)
+        self.z2_profile_list.put(self.motion_Z_list)
 
 flyer = CXASFlyer('BL22:SCAN:MASTER', name='flyer') #, configuration_attrs=['trigger_width'])
