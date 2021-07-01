@@ -20,11 +20,7 @@ logger = logging.getLogger()
 
 __all__ = ['flyer']
 
-<<<<<<< Updated upstream
-so_path = Path.cwd() / 'fpga_eval' / 'omFpgaEval.so'
-=======
 so_path = Path(__file__).parent / 'fpga_eval' / 'omFpgaEval.so'
->>>>>>> Stashed changes
 fpga_eval_lib = ctypes.cdll.LoadLibrary(so_path)
 
 # C# helper functions to decode PV
@@ -192,10 +188,6 @@ class CXASFlyer(FPGABox, FlyerInterface):
     
     def _data_update(self, value=None, timestamp=None, **kwargs):
         logging.info('_data_update()')
-<<<<<<< Updated upstream
-        print('_data_update()')
-=======
->>>>>>> Stashed changes
         pv_data = self.data.get()
         # initialize parameters
         self.num_frames         = np.zeros(1, np.uint32)
