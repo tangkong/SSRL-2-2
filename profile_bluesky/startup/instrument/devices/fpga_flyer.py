@@ -109,9 +109,9 @@ class FPGABox(Device):
 
     # configuration signals
     trigger_profile_list = Cpt(EpicsSignal, '.TLST')
-    phi_profile_list = Cpt(EpicsSignal, 'MOTOR1.PLST')
-    z_profile_list = Cpt(EpicsSignal, 'MOTOR3.PLST')
-    z2_profile_list = Cpt(EpicsSignal, 'MOTOR4.PLST')
+    phi_profile_list = Cpt(EpicsSignal, ':MOTOR1.PLST')
+    z_profile_list = Cpt(EpicsSignal, ':MOTOR3.PLST')
+    z2_profile_list = Cpt(EpicsSignal, ':MOTOR4.PLST')
     trigger_width = Cpt(EpicsSignal, '.TWID')
     trigger_base_rate = Cpt(EpicsSignal, '.TBRT')
 
@@ -370,7 +370,7 @@ class CXASFlyer(FPGABox, FlyerInterface):
 
     def load_trajectory(self, 
         traj_file_path=Path(__file__).parent / 'fpga_motion' / 'Cu_XANES.tra'):
-
+        
         traData = pd.read_csv(  traj_file_path,
                                 sep='\t',
                                 skiprows=6,
@@ -380,8 +380,9 @@ class CXASFlyer(FPGABox, FlyerInterface):
 
         # hard code, assume positions
         header = []
-        for _ in range(6):
-            header.append(traj_file_path.readline())
+        with open(traj_file_path) as traj_file:
+            for _ in range(6):
+                header.append(traj_file.readline())
 
         bragg_start            = header[0].split()[1]
         bragg_stop            = header[1].split()[1]
@@ -403,7 +404,7 @@ class CXASFlyer(FPGABox, FlyerInterface):
 
         fpgaTrigger = FpgaTrigger(    np.ctypeslib.as_ctypes(self.time_list),
                                     np.ctypeslib.as_ctypes(self.energy_list),
-                                    len(time),
+                                    len(self.time_list),
                                     
                                     np.ctypeslib.as_ctypes(self.trigger_list),
                                     np.ctypeslib.as_ctypes(self.trigger_len),
