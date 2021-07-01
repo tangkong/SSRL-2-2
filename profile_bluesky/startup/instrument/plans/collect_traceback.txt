@@ -1,0 +1,85 @@
+---------------------------------------------------------------------------
+TypeError                                 Traceback (most recent call last)
+<ipython-input-5-542254b2f6a5> in <module>
+----> 1 RE(fly_plan(flyer))
+
+~/.conda/envs/collect/lib/python3.8/site-packages/bluesky/run_engine.py in __call__(self, *args, **metadata_kw)
+    793             self._task_fut.add_done_callback(set_blocking_event)
+    794 
+--> 795         self._resume_task(init_func=_build_task)
+    796 
+    797         if self._interrupted:
+
+~/.conda/envs/collect/lib/python3.8/site-packages/bluesky/run_engine.py in _resume_task(self, init_func)
+    917                     if (exc is not None
+    918                             and not isinstance(exc, _RunEnginePanic)):
+--> 919                         raise exc
+    920 
+    921     def install_suspender(self, suspender):
+
+~/.conda/envs/collect/lib/python3.8/site-packages/bluesky/run_engine.py in _run(self)
+   1486             exit_reason = str(err)
+   1487             self.log.exception("Run aborted")
+-> 1488             raise err
+   1489         finally:
+   1490             if not exit_reason:
+
+~/.conda/envs/collect/lib/python3.8/site-packages/bluesky/run_engine.py in _run(self)
+   1327                         # throw the exception at the current plan
+   1328                         try:
+-> 1329                             msg = self._plan_stack[-1].throw(
+   1330                                 stashed_exception or resp)
+   1331                         except Exception as e:
+
+~/roberttk/profile_dev/cont_scan_test.py in fly_plan(flyer, md)
+    366     while not complete_status.done:
+    367         yield from bps.sleep(0.1) # rate limit @ 40Hz
+--> 368         yield from bps.collect(flyer)
+    369 
+    370     yield from bps.close_run()
+
+~/.conda/envs/collect/lib/python3.8/site-packages/bluesky/plan_stubs.py in collect(obj, stream, return_payload)
+    656     :func:`bluesky.plan_stubs.wait`
+    657     """
+--> 658     return (yield Msg('collect', obj, stream=stream, return_payload=return_payload))
+    659 
+    660 
+
+~/.conda/envs/collect/lib/python3.8/site-packages/bluesky/run_engine.py in _run(self)
+   1411                         # exceptions (coming in via throw) can be
+   1412                         # raised
+-> 1413                         new_response = await coro(msg)
+   1414 
+   1415                     # special case `CancelledError` and let the outer
+
+~/.conda/envs/collect/lib/python3.8/site-packages/bluesky/run_engine.py in _collect(self, msg)
+   1877                                          "run is open.") from ke
+   1878 
+-> 1879         return (await current_run.collect(msg))
+   1880 
+   1881     async def _null(self, msg):
+
+~/.conda/envs/collect/lib/python3.8/site-packages/bluesky/bundlers.py in collect(self, msg)
+    586                 }
+    587                 for config_key, config in component_config.items():
+--> 588                     collect_obj_config[component_name]["data"][config_key] = config["value"]
+    589                     collect_obj_config[component_name]["timestamps"][config_key] = config["timestamp"]
+    590         else:
+
+TypeError: 'float' object is not subscriptable
+
+===============================================================================
+===============================================================================
+In [10]: %debug
+> /home/b_spec/.conda/envs/collect/lib/python3.8/site-packages/bluesky/bundlers.py(588)collect()
+    586                 }
+    587                 for config_key, config in component_config.items():
+--> 588                     collect_obj_config[component_name]["data"][config_key] = config["value"]
+    589                     collect_obj_config[component_name]["timestamps"][config_key] = config["timestamp"]
+    590         else:
+
+ipdb> component_config
+{'value': 0.0, 'timestamp': 633656614.545222}
+ipdb> component_name
+'flyer_trigger_width'
+
