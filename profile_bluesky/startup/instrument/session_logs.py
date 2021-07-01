@@ -20,7 +20,7 @@ _ipython.magic(f'logstart -o -t {CONSOLE_TO_FILE} rotate')
 
 # create logger
 logger = logging.getLogger()
-logger.setLevel(logging.DEBUG)
+#logger.setLevel(logging.DEBUG)
 
 logger.info('#'*60 + " startup")
 logger.info('logging started')

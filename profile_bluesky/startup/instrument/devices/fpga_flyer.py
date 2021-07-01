@@ -20,7 +20,11 @@ logger = logging.getLogger()
 
 __all__ = ['flyer']
 
+<<<<<<< Updated upstream
 so_path = Path.cwd() / 'fpga_eval' / 'omFpgaEval.so'
+=======
+so_path = Path(__file__).parent / 'fpga_eval' / 'omFpgaEval.so'
+>>>>>>> Stashed changes
 fpga_eval_lib = ctypes.cdll.LoadLibrary(so_path)
 
 # C# helper functions to decode PV
@@ -188,7 +192,10 @@ class CXASFlyer(FPGABox, FlyerInterface):
     
     def _data_update(self, value=None, timestamp=None, **kwargs):
         logging.info('_data_update()')
+<<<<<<< Updated upstream
         print('_data_update()')
+=======
+>>>>>>> Stashed changes
         pv_data = self.data.get()
         # initialize parameters
         self.num_frames         = np.zeros(1, np.uint32)
@@ -266,13 +273,13 @@ class CXASFlyer(FPGABox, FlyerInterface):
             curr_frame = {}
             curr_frame.update({'time': self.time[frame]})
             curr_frame.update({'gate': self.gate[frame]})
-            curr_frame.update({f'adc_{i}': self.adc[frame+i] 
+            curr_frame.update({f'adc_{i}': self.adc[frame*self.num_adc.item()+i] 
                                 for i in range(self.num_adc.item())})
-            curr_frame.update({f'motor_{i}': self.motor[frame+i] 
+            curr_frame.update({f'motor_{i}': self.motor[frame*self.num_motor.item()+i] 
                                 for i in range(self.num_motor.item())})
-            curr_frame.update({f'encoder_{i}': self.encoder[frame+i] 
+            curr_frame.update({f'encoder_{i}': self.encoder[frame*self.num_encoder.item()+i] 
                                   for i in range(self.num_encoder.item())})
-            curr_frame.update({f'counter_{i}': self.counter[frame+i] 
+            curr_frame.update({f'counter_{i}': self.counter[frame*self.num_counter.item()+i] 
                                 for i in range(self.num_counter.item())})
 
             t = time.time() 

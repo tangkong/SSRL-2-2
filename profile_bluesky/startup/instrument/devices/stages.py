@@ -24,7 +24,7 @@ class FPGABoxMotors(MotorBundle):
 
 
 # measure stage status at beginning of every plan
-sd.baseline.append(s_stage)
+#sd.baseline.append(s_stage)
 
 # convenience definitions 
 px = s_stage.px
