@@ -222,6 +222,20 @@ class CXASFlyer(FPGABox, FlyerInterface):
         for subd in d:
             yield subd
 
+    def read(self):
+        """read: overwrite ophyd.device.read for this specific flyer
+        TO-DO
+        """
+        if len(self.buffer_dict) < 1:
+            self._data_update()
+        
+        curr_frame = self.buffer_dict[-1]
+
+        results = {}
+        for k in curr_frame['data'].keys():
+            results[k] = {'value': curr_frame['data'][k],
+                           'timestamp': curr_frame['timestamps'][k] }
+
     def stage(self):
         """ stage: initialize variables?  Record resting config PV's? 
         TO-DO: Figure out what configuration is needed?
