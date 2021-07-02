@@ -37,8 +37,7 @@ class FpgaFrameInfo(ctypes.Structure):
                     ("numMotor",    ctypes.POINTER(ctypes.c_uint)),
                     
                     ("lastErrorCode", ctypes.POINTER(ctypes.c_uint))]
-
-                    
+         
 class FpgaFrameData(ctypes.Structure):
     _fields_ =    [ ("lenData",     ctypes.c_uint),
                     ("data",        ctypes.POINTER(ctypes.c_int)),
@@ -109,11 +108,20 @@ class FPGABox(Device):
 
     # configuration signals
     trigger_profile_list = Cpt(EpicsSignal, '.TLST')
+    trigger_width = Cpt(EpicsSignal, '.TWID')
+    trigger_base_rate = Cpt(EpicsSignal, '.TBRT')
+    trigger_source = Cpt(EpicsSignal, '.TSRC')
+
+    dout1_type = Cpt(EpicsSignal, '.OTP1')
+    dout1_control = Cpt(EpicsSignal, '.DO1') 
+
     phi_profile_list = Cpt(EpicsSignal, ':MOTOR1.PLST')
     z_profile_list = Cpt(EpicsSignal, ':MOTOR3.PLST')
     z2_profile_list = Cpt(EpicsSignal, ':MOTOR4.PLST')
-    trigger_width = Cpt(EpicsSignal, '.TWID')
-    trigger_base_rate = Cpt(EpicsSignal, '.TBRT')
+    
+    phi_SPMG = Cpt(EpicsSignal, ':MOTOR1.SPMG')
+    z_SPMG = Cpt(EpicsSignal, ':MOTOR3.SPMG')
+    z2_SPMG = Cpt(EpicsSignal, ':MOTOR4.SPMG')
 
 class CXASFlyer(FPGABox, FlyerInterface):
     """CXASFlyer continuous x-ray spectroscopy flyer device
@@ -128,8 +136,8 @@ class CXASFlyer(FPGABox, FlyerInterface):
         self.complete_status = None
         self.t0 = time.time()
         self.last_update_time = None
-        #self.trig = EpicsSignal('BL22:SCAN:MASTER.TRIG', name='trigger')
-        #self.data = EpicsSignal('BL22:SCAN:MASTER.DATA', name='data')
+
+        self.buffer_dict = []
 
         # TO-DO: configuration PV's to keep track of, for derived data
         if config_attrs is None:
@@ -145,39 +153,7 @@ class CXASFlyer(FPGABox, FlyerInterface):
         self.kickoff_status = ophyd.DeviceStatus(self)
         self.complete_status = ophyd.DeviceStatus(self)
         
-        # initialize parameters
-        self.num_frames         = np.zeros(1, np.uint32)
-        self.num_adc            = np.zeros(1, np.uint32)
-        self.num_counter        = np.zeros(1, np.uint32)
-        self.num_encoder        = np.zeros(1, np.uint32)
-        self.num_motor          = np.zeros(1, np.uint32)
-        self.last_error_code    = np.zeros(1, np.uint32)
-
-        pv_data = self.data.get() # array of ints
-
-        # get info from the FPGA box and record
-        fpgaFrameInfo = FpgaFrameInfo(0,
-                                np.ctypeslib.as_ctypes(pv_data),
-                                
-                                np.ctypeslib.as_ctypes(self.num_frames),
-                                
-                                np.ctypeslib.as_ctypes(self.num_adc),
-                                np.ctypeslib.as_ctypes(self.num_counter),
-                                np.ctypeslib.as_ctypes(self.num_encoder),
-                                np.ctypeslib.as_ctypes(self.num_motor),
-                                # 1 for success
-                                np.ctypeslib.as_ctypes(self.last_error_code))
-
-        fpga_eval_lib.GetFpgaFrameInfo.restype = None
-        fpga_eval_lib.GetFpgaFrameInfo(ctypes.byref(fpgaFrameInfo)) 
-
-        # initialize data 
-        self.adc         = np.zeros(self.num_frames * self.num_adc, np.uint32)
-        self.counter     = np.zeros(self.num_frames * self.num_counter, np.uint32)
-        self.motor       = np.zeros(self.num_frames * self.num_motor, np.uint32)
-        self.encoder     = np.zeros(self.num_frames * self.num_encoder, np.uint32)
-        self.gate        = np.zeros(self.num_frames, np.uint32)
-        self.time        = np.zeros(self.num_frames, np.uint32)
+        self._info_update() # read config PV's, initialize frames
 
         # initialize data format for describe_collect(), collect()
         self.buffer_dict = [] # will store event dictionaries
@@ -199,6 +175,15 @@ class CXASFlyer(FPGABox, FlyerInterface):
             return
 
         # Kickoff activity here. Set up activity that runs when PV's update
+        # set up fly scan configuration.  Eventually record as stage_sigs
+        self.trigger_source.put(3)
+        self.dout1_type.put(1)
+        self.dout1_control.put(1)
+        
+        self.phi_SPMG.put(2)
+        self.z_SPMG.put(2)
+        self.z2_SPMG.put(2)
+
         # sub before to make sure we don't miss any data?
         self.data.subscribe(self._data_update)
         self.trigger_signal.put(2)
@@ -209,6 +194,67 @@ class CXASFlyer(FPGABox, FlyerInterface):
         self.kickoff_status._finished(success=True)
 
         # Wait for completion, leave this to the _trigger_changed method
+
+    def complete(self):
+        logger.info('complete()')
+        if self.complete_status is None:
+            raise RuntimeError("No collection is in progress")
+
+        return self.complete_status
+
+    def describe_collect(self):
+        """
+        Describe details for ``collect()`` method
+        """
+        logger.info("describe_collect()")
+        return self.desc
+
+    def collect(self):
+        """
+        Start this Flyer
+        """
+        logger.info("collect()")
+        
+        # yield dictionary to bluesky
+        # clear data dictionary
+        d = self.buffer_dict
+        self.buffer_dict = []
+        for subd in d:
+            yield subd
+
+    def stage(self):
+        """ stage: initialize variables?  Record resting config PV's? 
+        TO-DO: Figure out what configuration is needed?
+        TO-DO: Differentiate between fly scan and step scan config?  Maybe this 
+                is only for step scan?
+        """
+        return
+
+    def unstage(self):
+        """ unstage: return configuration to resting state
+        TO-DO: Determine what resting state is
+        """
+        return
+
+    def _setup_describe_collect(self):
+        """ set up data schema  """
+        # currently only single stream
+        d = dict(
+            source = self.data.pvname,
+            dtype = 'number', 
+            shape = []
+        )
+       
+        # construct the schema
+        dd = {}
+        dd.update({'time':d})
+        dd.update({'gate':d})
+        dd.update({f'motor_{i}':d for i in range(self.num_motor.item())})
+        dd.update({f'adc_{i}':d for i in range(self.num_adc.item())})
+        dd.update({f'encoder_{i}':d for i in range(self.num_encoder.item())})
+        dd.update({f'counter_{i}':d for i in range(self.num_counter.item())})
+        
+        self.desc = {self.name: dd}
 
     def _trigger_changed(self, value=None, old_value=None, **kwargs):
         "This is called when the 'trigger_signal' changes."
@@ -223,10 +269,8 @@ class CXASFlyer(FPGABox, FlyerInterface):
             # remove callbacks, could do this in unstage(), but wait to gather more tasks?
             self.data.unsubscribe_all()
             self.trigger_signal.unsubscribe_all()
-    
-    def _data_update(self, value=None, timestamp=None, **kwargs):
-        logging.info('_data_update()')
-        pv_data = self.data.get()
+
+    def _info_update(self):
         # initialize parameters
         self.num_frames         = np.zeros(1, np.uint32)
         self.num_adc            = np.zeros(1, np.uint32)
@@ -260,6 +304,16 @@ class CXASFlyer(FPGABox, FlyerInterface):
         self.encoder     = np.zeros(self.num_frames * self.num_encoder, np.uint32)
         self.gate        = np.zeros(self.num_frames, np.uint32)
         self.time        = np.zeros(self.num_frames, np.uint32)
+
+    def _data_update(self, value=None, timestamp=None, **kwargs):
+        """ Update in python buffer with data PV information.  
+        Could have frame info change between collections, so be sure to update
+        """
+        logging.info('_data_update()')
+
+        self._info_update()
+
+        pv_data = self.data.get()
 
         # parse new frame data
         #print('--init fpgaFrameData')
@@ -282,8 +336,6 @@ class CXASFlyer(FPGABox, FlyerInterface):
 								np.ctypeslib.as_ctypes(self.time),
 								
 								np.ctypeslib.as_ctypes(self.last_error_code))
-
-        
 
         # C function call
         #print('--calling EvalFpgaData')
@@ -320,53 +372,6 @@ class CXASFlyer(FPGABox, FlyerInterface):
             self.buffer_dict.append({'time':t,
                                     'data':curr_frame,
                                     'timestamps':time_frame})
-
-    def complete(self):
-        logger.info('complete()')
-        if self.complete_status is None:
-            raise RuntimeError("No collection is in progress")
-
-        return self.complete_status
-
-    def _setup_describe_collect(self):
-        """ set up data schema  """
-        # currently only single stream
-        d = dict(
-            source = self.data.pvname,
-            dtype = 'number', 
-            shape = []
-        )
-       
-        # construct the schema
-        dd = {}
-        dd.update({'time':d})
-        dd.update({'gate':d})
-        dd.update({f'motor_{i}':d for i in range(self.num_motor.item())})
-        dd.update({f'adc_{i}':d for i in range(self.num_adc.item())})
-        dd.update({f'encoder_{i}':d for i in range(self.num_encoder.item())})
-        dd.update({f'counter_{i}':d for i in range(self.num_counter.item())})
-        
-        self.desc = {self.name: dd}
-
-    def describe_collect(self):
-        """
-        Describe details for ``collect()`` method
-        """
-        logger.info("describe_collect()")
-        return self.desc
-
-    def collect(self):
-        """
-        Start this Flyer
-        """
-        logger.info("collect()")
-        
-        # yield dictionary to bluesky
-        # clear data dictionary
-        d = self.buffer_dict
-        self.buffer_dict = []
-        for subd in d:
-            yield subd
 
     def load_trajectory(self, 
         traj_file_path=Path(__file__).parent / 'fpga_motion' / 'Cu_XANES.tra'):
