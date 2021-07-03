@@ -18,6 +18,7 @@ from ophyd.sim import det
 from ophyd.flyers import FlyerInterface
 
 from .misc_devices import CXASEpicsMotor
+from .xspress3 import xsp3
 
 logger = logging.getLogger()
 
@@ -135,7 +136,7 @@ class CXASFlyer(FPGABox, FlyerInterface):
     """
 
     use_x3 = Cpt(Signal, value=0, doc='Enabling x3 in this flyer')
-
+    x3 = xsp3
     def __init__(self, prefix, *, config_attrs=None, read_attrs=None, **kwargs):
         
         # Make status objects accessible by all methods
@@ -198,6 +199,15 @@ class CXASFlyer(FPGABox, FlyerInterface):
         self.z2_SPMG.put(2)
 
         self.load_trajectory()
+
+        if self.use_x3.get():
+            self.dout1_type.put(1)
+            self.dout1_control.put(4)
+
+            self.x3.total_points = self.trigger_len
+            self.x3.stage() # load stage sigs, assuming external trigger  
+            self.x3.prep_assest_docs() # generate all asset documents
+            self.frame_ctr = 0       
 
         # sub before to make sure we don't miss any data?
         self.data.subscribe(self._data_update)
@@ -289,6 +299,17 @@ class CXASFlyer(FPGABox, FlyerInterface):
         dd.update({f'encoder_{i}':d for i in range(self.num_encoder.item())})
         dd.update({f'counter_{i}':d for i in range(self.num_counter.item())})
         
+        if self.use_x3.get():
+            dmca = dict(
+                    source = 'xsp3',
+                    dtype = 'array', 
+                    shape = [-1, -1],
+                    external= 'FILESTORE:'
+                    )
+            dd.update({'mca_0': dmca})
+            dd.update({'mca_1': dmca})
+
+
         self.desc = {self.name: dd}
 
     def _trigger_changed(self, value=None, old_value=None, **kwargs):
@@ -399,6 +420,14 @@ class CXASFlyer(FPGABox, FlyerInterface):
             curr_frame.update({f'counter_{i}': self.counter[frame*self.num_counter.item()+i] 
                                 for i in range(self.num_counter.item())})
 
+            if self.use_x3.get():
+                datums = list(self.x3._datum_ids)
+                curr_frame.update({'mca_0': datums[self.frame_ctr]})
+                curr_frame.update({'mca_1': datums[self.frame_ctr + 1]})
+
+                self.frame_ctr += 2
+
+
             t = time.time() 
             time_frame ={}
             for key in curr_frame.keys():
@@ -407,6 +436,10 @@ class CXASFlyer(FPGABox, FlyerInterface):
             self.buffer_dict.append({'time':t,
                                     'data':curr_frame,
                                     'timestamps':time_frame})
+
+    def collect_asset_docs(self):
+        """ default to the asset docs in x3? """
+        yield from self.x3.collect_asset_docs()
 
     def set_trajectory(self, 
         traj_file_path=Path(__file__).parent / 'fpga_motion' / 'Cu_XANES.tra'):

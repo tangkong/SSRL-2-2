@@ -19,7 +19,7 @@ from ..session_logs import logger
 
 logger.info(__file__)
 
-class SSRLXspress3Detector(XspressTrigger, Xspress3Detector):
+class CXASXspress3Detector(XspressTrigger, Xspress3Detector):
     roi_data = Cpt(PluginBase, 'ROIDATA:')
     channel1 = Cpt(Xspress3Channel, 'C1_', channel_num=1, read_attrs=['rois'])
     channel2 = Cpt(Xspress3Channel, 'C2_', channel_num=2, read_attrs=['rois'])
@@ -56,6 +56,7 @@ class SSRLXspress3Detector(XspressTrigger, Xspress3Detector):
             self.hdf5.capture.put(1)
         ret = super().trigger()
         return ret
+
     def stop(self):
         # .stop() walks back to Device class... which does not return anything
         #print('>>>>>>>>>>>>>>>>>>>>>>>> xsp3.stop')
@@ -96,6 +97,25 @@ class SSRLXspress3Detector(XspressTrigger, Xspress3Detector):
 
         return NullStatus()
 
+    def prep_assest_docs(self):
+        """ write all asset documents and gather them for insertion into 
+        fly scan documents.
+
+        Unlike previous complete() method, can be called before finishing all
+        acquisition. 
+        """
+
+        for n in range(self.total_points):
+            for channel_num in self.hdf5.channels:  # Channels (1, 2) as of 03/04/2020
+                datum_id = '{}/{}'.format(self.hdf5._resource_uid, next(self._datum_counter))
+                datum = {'resource': self.hdf5._resource_uid,
+                         'datum_kwargs': {'frame': n,
+                                          'channel': channel_num},
+                         'datum_id': datum_id}
+                self._asset_docs_cache.append(('datum', datum))
+                self._datum_ids.append(datum_id)
+
+
     def collect(self):
         now = ttime.time()
         print(f'now: {now}')
@@ -116,7 +136,7 @@ class SSRLXspress3Detector(XspressTrigger, Xspress3Detector):
         #for item in items:
         #    yield item
 
-xsp3 = SSRLXspress3Detector('XSPRESS3-EXAMPLE:', name='xsp3', roi_sums=True)
+xsp3 = CXASXspress3Detector('XSPRESS3-EXAMPLE:', name='xsp3', roi_sums=True)
 
 # bp=blueskyplans, imported by nslsii startup configuration, 
 xsp3.settings.configuration_attrs = ['acquire_period',
@@ -154,3 +174,4 @@ xsp3.channel1.rois.roi03.value.kind = 'hinted'
 xsp3.channel1.rois.roi04.value.kind = 'hinted'
 
 xsp3.hdf5.warmup()
+xsp3.external_trig.put(True)
