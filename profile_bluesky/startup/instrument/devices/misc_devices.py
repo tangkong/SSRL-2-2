@@ -279,13 +279,13 @@ class CXASEpicsMotor(Device, PositionerBase):
         if was_moving and not self._moving:
             success = True
             # Check if we are moving towards the low limit switch
-            if self.direction_of_travel.get() == 0:
-                if self.low_limit_switch.get() == 1:
-                    success = False
-            # No, we are going to the high limit switch
-            else:
-                if self.high_limit_switch.get() == 1:
-                    success = False
+            # if self.direction_of_travel.get() == 0:
+            #     if self.low_limit_switch.get() == 1:
+            #         success = False
+            # # No, we are going to the high limit switch
+            # else:
+            #     if self.high_limit_switch.get() == 1:
+            #         success = False
 
             # Check the severity of the alarm field after motion is complete.
             # If there is any alarm at all warn the user, and if the alarm is

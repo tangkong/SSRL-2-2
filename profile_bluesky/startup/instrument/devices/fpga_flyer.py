@@ -13,9 +13,11 @@ from bluesky.preprocessors import fly_during_decorator
 import ophyd
 from ophyd import Device
 from ophyd import Component as Cpt
-from ophyd.signal import EpicsSignal
+from ophyd.signal import EpicsSignal, Signal
 from ophyd.sim import det
 from ophyd.flyers import FlyerInterface
+
+from .misc_devices import CXASEpicsMotor
 
 logger = logging.getLogger()
 
@@ -115,6 +117,8 @@ class FPGABox(Device):
     dout1_type = Cpt(EpicsSignal, '.OTP1')
     dout1_control = Cpt(EpicsSignal, '.DO1') 
 
+    # phi_motor = Cpt(CXASEpicsMotor, ':MOTOR1') # issues with
+
     phi_profile_list = Cpt(EpicsSignal, ':MOTOR1.PLST')
     z_profile_list = Cpt(EpicsSignal, ':MOTOR3.PLST')
     z2_profile_list = Cpt(EpicsSignal, ':MOTOR4.PLST')
@@ -129,6 +133,9 @@ class CXASFlyer(FPGABox, FlyerInterface):
 
     flyer = CXASFlyer('BL22:SCAN:MASTER', name='flyer')
     """
+
+    use_x3 = Cpt(Signal, value=0, doc='Enabling x3 in this flyer')
+
     def __init__(self, prefix, *, config_attrs=None, read_attrs=None, **kwargs):
         
         # Make status objects accessible by all methods
@@ -136,8 +143,12 @@ class CXASFlyer(FPGABox, FlyerInterface):
         self.complete_status = None
         self.t0 = time.time()
         self.last_update_time = None
+        self.traj_file_path=Path(__file__).parent / 'fpga_motion' / 'Cu_XANES.tra'
 
         self.buffer_dict = []
+
+        # set up stage sigs
+
 
         # TO-DO: configuration PV's to keep track of, for derived data
         if config_attrs is None:
@@ -147,6 +158,10 @@ class CXASFlyer(FPGABox, FlyerInterface):
         super().__init__(prefix, **kwargs) 
             # config attrs kinda broken at the moment?  Disabling works
                             #configuration_attrs=config_attrs, read_attrs=read_attrs, **kwargs)
+
+    def stage(self):
+        super().stage()
+        return
 
     def kickoff(self):
         logger.info("kickoff()")
@@ -177,12 +192,12 @@ class CXASFlyer(FPGABox, FlyerInterface):
         # Kickoff activity here. Set up activity that runs when PV's update
         # set up fly scan configuration.  Eventually record as stage_sigs
         self.trigger_source.put(3)
-        self.dout1_type.put(1)
-        self.dout1_control.put(1)
         
-        self.phi_SPMG.put(2)
+        self.phi_SPMG.put(2) # set motors to synchronize?
         self.z_SPMG.put(2)
         self.z2_SPMG.put(2)
+
+        self.load_trajectory()
 
         # sub before to make sure we don't miss any data?
         self.data.subscribe(self._data_update)
@@ -222,9 +237,15 @@ class CXASFlyer(FPGABox, FlyerInterface):
         for subd in d:
             yield subd
 
+    def trigger(self):
+        """ trigger: Capture a single frame, write to buffer dict. 
+        TO-DO: Determine if inherited trigger behavior can be used
+        """
+        self.trigger_signal.put(1) # single trigger
+        self._data_update()
+        
     def read(self):
         """read: overwrite ophyd.device.read for this specific flyer
-        TO-DO
         """
         if len(self.buffer_dict) < 1:
             self._data_update()
@@ -387,10 +408,13 @@ class CXASFlyer(FPGABox, FlyerInterface):
                                     'data':curr_frame,
                                     'timestamps':time_frame})
 
-    def load_trajectory(self, 
+    def set_trajectory(self, 
         traj_file_path=Path(__file__).parent / 'fpga_motion' / 'Cu_XANES.tra'):
+        self.traj_file_path = traj_file_path
+
+    def load_trajectory(self):
         
-        traData = pd.read_csv(  traj_file_path,
+        traData = pd.read_csv(  self.traj_file_path,
                                 sep='\t',
                                 skiprows=6,
                                 comment='#',
@@ -399,7 +423,7 @@ class CXASFlyer(FPGABox, FlyerInterface):
 
         # hard code, assume positions
         header = []
-        with open(traj_file_path) as traj_file:
+        with open(self.traj_file_path) as traj_file:
             for _ in range(6):
                 header.append(traj_file.readline())
 
@@ -440,7 +464,7 @@ class CXASFlyer(FPGABox, FlyerInterface):
                             
                             1.9202e-10,        # crystalD        [m]
                             5,                # crystalGap    [mm]
-                            100000,            # motorPhiRes:    [counts/EGU]        ### please verify
+                            50000,            # motorPhiRes:    [counts/EGU]        ### please verify
                             40320,            # motorZRes:    [counts/EGU]        ### please verify
                             
                             np.ctypeslib.as_ctypes(self.motion_phi_list),
