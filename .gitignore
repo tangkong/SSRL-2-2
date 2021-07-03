@@ -9,5 +9,6 @@ __pycache__/
 .metadata.md/
 
 .test_profile/
+.profile_bluesky/history.sqlite
 
 docs/source/_build/
