@@ -8,7 +8,7 @@ __pycache__/
 .metadata/
 .metadata.md/
 
-.test_profile/
-.profile_bluesky/history.sqlite
+test_profile/
+profile_bluesky/history.sqlite*
 
 docs/source/_build/
