@@ -44,7 +44,7 @@ callback_db = {}
 
 # set up databroker
 import databroker
-db = databroker.Broker.named('mongoCat')
+db = databroker.Broker.named('temp') #'mongoCat')
 callback_db['Broker'] = RE.subscribe(db.insert)
 
 # Set up SupplementalData.

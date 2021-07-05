@@ -97,15 +97,20 @@ class CXASXspress3Detector(XspressTrigger, Xspress3Detector):
 
         return NullStatus()
 
-    def prep_assest_docs(self):
+    def prep_asset_docs(self):
         """ write all asset documents and gather them for insertion into 
         fly scan documents.
 
         Unlike previous complete() method, can be called before finishing all
         acquisition. 
         """
+        for resource in self.hdf5._asset_docs_cache:
+            self._asset_docs_cache.append(('resource', resource[1]))
 
-        for n in range(self.total_points):
+        self._datum_ids = []
+
+
+        for n in range(self.total_points.get().item()):
             for channel_num in self.hdf5.channels:  # Channels (1, 2) as of 03/04/2020
                 datum_id = '{}/{}'.format(self.hdf5._resource_uid, next(self._datum_counter))
                 datum = {'resource': self.hdf5._resource_uid,
@@ -131,10 +136,10 @@ class CXASXspress3Detector(XspressTrigger, Xspress3Detector):
         for p in file_plugins:
             yield from p.collect_asset_docs()
                                 
-        #items = list(self._asset_docs_cache)
-        #self._asset_docs_cache.clear()
-        #for item in items:
-        #    yield item
+        items = list(self._asset_docs_cache)
+        self._asset_docs_cache.clear()
+        for item in items:
+            yield item
 
 xsp3 = CXASXspress3Detector('XSPRESS3-EXAMPLE:', name='xsp3', roi_sums=True)
 

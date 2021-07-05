@@ -118,6 +118,8 @@ class FPGABox(Device):
     dout1_type = Cpt(EpicsSignal, '.OTP1')
     dout1_control = Cpt(EpicsSignal, '.DO1') 
 
+    dout1_width = Cpt(EpicsSignal, '.OWD1')
+
     # phi_motor = Cpt(CXASEpicsMotor, ':MOTOR1') # issues with
 
     phi_profile_list = Cpt(EpicsSignal, ':MOTOR1.PLST')
@@ -201,13 +203,20 @@ class CXASFlyer(FPGABox, FlyerInterface):
         self.load_trajectory()
 
         if self.use_x3.get():
-            self.dout1_type.put(1)
+            self.dout1_type.put(0)
             self.dout1_control.put(4)
+            self.dout1_width.put(8) # probably not the right setting for all
+            # need to make sure this time fits between triggers
+            # TO-DO: Set this dynamically based on trajectory list?
 
-            self.x3.total_points = self.trigger_len
+            self.x3.total_points.put(self.trigger_len)
             self.x3.stage() # load stage sigs, assuming external trigger  
-            self.x3.prep_assest_docs() # generate all asset documents
-            self.frame_ctr = 0       
+            self.x3.prep_asset_docs() # generate all asset documents
+            self.frame_ctr = 0
+            self.trigger_ctr = 0
+
+            # once we're set up, ready x3 to receive trigger signals
+            self.x3.settings.acquire.put(1)
 
         # sub before to make sure we don't miss any data?
         self.data.subscribe(self._data_update)
@@ -239,7 +248,6 @@ class CXASFlyer(FPGABox, FlyerInterface):
         Start this Flyer
         """
         logger.info("collect()")
-        
         # yield dictionary to bluesky
         # clear data dictionary
         d = self.buffer_dict
@@ -278,6 +286,8 @@ class CXASFlyer(FPGABox, FlyerInterface):
     def unstage(self):
         """ unstage: return configuration to resting state
         TO-DO: Determine what resting state is
+        turn off x3 collection, h5 plugin
+        move motors back to original location
         """
         return
 
@@ -320,11 +330,17 @@ class CXASFlyer(FPGABox, FlyerInterface):
         if old_value > value: #(old_value == 1 or 2) and (value == 0):
             # Negative-going edge means an acquisition just finished.
             self.complete_status._finished()
-            #self.complete_status = None # wrap up for next run
-            #self.kickoff_status = None
             # remove callbacks, could do this in unstage(), but wait to gather more tasks?
+            # Also unsure when unstage would be called during a fly scan.
             self.data.unsubscribe_all()
             self.trigger_signal.unsubscribe_all()
+
+
+            if self.use_x3.get():
+                self.x3.unstage()
+                # stop file writing
+                self.x3.settings.acquire.put(0)
+                self.x3.hdf5.capture.put(0)
 
     def _info_update(self):
         # initialize parameters
@@ -366,7 +382,7 @@ class CXASFlyer(FPGABox, FlyerInterface):
         Could have frame info change between collections, so be sure to update
         """
         logging.info('_data_update()')
-
+        print('_data_update()')
         self._info_update()
 
         pv_data = self.data.get()
@@ -408,6 +424,7 @@ class CXASFlyer(FPGABox, FlyerInterface):
         # for each frame in self.frame_num, append to buffer
         #print('--setup dictionary')
         for frame in range(self.num_frames.item()):
+            self.trigger_ctr +=1
             curr_frame = {}
             curr_frame.update({'time': self.time[frame]})
             curr_frame.update({'gate': self.gate[frame]})
@@ -424,18 +441,23 @@ class CXASFlyer(FPGABox, FlyerInterface):
                 datums = list(self.x3._datum_ids)
                 curr_frame.update({'mca_0': datums[self.frame_ctr]})
                 curr_frame.update({'mca_1': datums[self.frame_ctr + 1]})
-
+                
                 self.frame_ctr += 2
-
 
             t = time.time() 
             time_frame ={}
             for key in curr_frame.keys():
                 time_frame.update({key:t})
+                
+            final_dict = {'time':t,
+                          'data':curr_frame,
+                          'timestamps':time_frame}
+            if self.use_x3.get():
+                final_dict.update({'filled' : 
+                               {key: False for key in ['mca_0', 'mca_1']} })
+
             #print('  --append to buffer')
-            self.buffer_dict.append({'time':t,
-                                    'data':curr_frame,
-                                    'timestamps':time_frame})
+            self.buffer_dict.append(final_dict)
 
     def collect_asset_docs(self):
         """ default to the asset docs in x3? """
