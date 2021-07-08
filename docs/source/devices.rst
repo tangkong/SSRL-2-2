@@ -1,53 +1,26 @@
 =======
 Devices
 =======
-
-A variety of devices are available for use at SSRL-1-5.  Currently only 
-High Throughput (HiTp) diffraction is supported, but more functionality will
-be added in the future.  
-
-While most PV's are accessible from the ipython session, it's generally 
-advised to use the GUI elements to adjust parameters like exposure time or 
-frame rates.  
+For continuous scanning X-ray spectroscopy, all equipment talks directly to a 
+central control system in the form of a "continuous scan box".  While this simpifies operations, 
+it also hides underlying sub-devices from view.    This is necessary to enable 
+the acquisition speed and high data throughput that continuous scanning requires.  
+This section will attempt to walk a middle-ground, conveying enough information 
+to enable operation while not confusing the user.   
 
 
-Area detectors
-==============
+Continuous Scan Acquisiton System (CS box)
+==========================================
+Communication to the continuous scan box is made possible via EPICS and channel access.  
+An IOC housed on the CS box connects to the monochromator, table motors, ion 
+gauges, and external trigger ports (to name a few).  
 
-Dexela Area Detector: ``dexDet`` [Currently not connected]
-----------------------------------------------------------
-The Dexela area detector requires dark field correction.  We have already 
-included a plan for this purpose. 
+Table motors: ``flyer.vert1``, ``flyer.vert2``
+----------------------------------------------
 
-.. code:: ipython 
-
-    In [1]: RE( bp.count([dexDet]) ) # basic count plan
-
-    In [2]: uids = RE(dark_light_plan([dexDet], shutter)) # take a dark image followed by a light image
-
-MarCCD Area Detector: ``marDet``
---------------------------------
-The MarCCD area detector does not require any dark field correction and can be 
-used directly
-
-.. code:: ipython 
-
-    In [1]: RE( bp.count([marDet]) ) # basic count plan
-
-    In [2]: RE(mesh_circ_grid([marDet], s_stage.px, -10, 10, 4.5, 
-                                    s_stage.py, -10, 10, 4.5, 
-                                    radius=10, skip=4 ))
-
-
-More to come later?
--------------------
-
-Fluorescence detectors
-======================
-
-Xspress3 Fluorescence Detector: ``xsp3``
-----------------------------------------
-The Xspress3 detector writes .h5 files on each acquisition.  Both the full 
+Xspress3 Fluorescence Detector: ``flyer.x3``
+--------------------------------------------
+When The Xspress3 detector writes .h5 files on each acquisition.  Both the full 
 multi-channel arrays (MCA's) and integrated ROI values are accessible via PV 
 access, and can be inspected directly on the python interpreter.  Normally
 ROI ranges should be adjusted from the EDM display. 

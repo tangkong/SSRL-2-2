@@ -1,5 +1,5 @@
-Welcome to SSRL-2-2's documentation!
 =========================================
+Welcome to SSRL-2-2's documentation!
 
 This code is a collection of objects and plans useful for data collection at 
 SSRL 2-2.  
@@ -25,5 +25,3 @@ Index:
 .. toctree::
    :caption: Examples
    :maxdepth: 1
-
-   data-collection

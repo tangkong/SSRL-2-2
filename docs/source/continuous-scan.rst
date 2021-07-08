@@ -12,4 +12,22 @@ Data Schema
 -----------
 For speed considerations, the `.DATA` PV contains all measurement information in 
 one contiguous array that must be parsed before recording.  The formatting of 
-this array depends on how the FPGA box is configured.  
+this array depends on how the FPGA box is configured, but often many frames are 
+saved and emitted with each update of the `.DATA` PV. 
+
+"Raw" data is composed of timestamps, gates, encoders, ADCs, counters.  Given 
+some configuration information, these values can be converted to meaningful data. 
+
+
+Data collection
+---------------
+
+High level flow:
+Kickoff, collect (collect_asset_docs), complete?
+
+- Collection involves parsing the .DATA PV, which for speed purposes is an unformatted byte string. This is done by communicating with a compiled c module
+- 
+
+Detailed Flow:
+Home motors, arm motors, load trajectory, configure external triggers (X3), 
+
