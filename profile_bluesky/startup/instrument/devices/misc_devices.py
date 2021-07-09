@@ -82,12 +82,17 @@ class CXASEpicsMotor(Device, PositionerBase):
     # direction_of_travel = Cpt(EpicsSignal, '.TDIR', kind='omitted')
 
     # commands
+    spmg = Cpt(EpicsSignal, '.SPMG', kind='omitted')
     motor_stop = Cpt(EpicsSignal, '.STOP', kind='omitted')
     home_forward = Cpt(EpicsSignal, '.HOMF', kind='omitted')
     home_reverse = Cpt(EpicsSignal, '.HOMR', kind='omitted')
 
     # alarm information
     tolerated_alarm = AlarmSeverity.NO_ALARM
+
+    # Fly-scan specific fields
+    profile_list = Cpt(EpicsSignal, '.PLST', kind='omitted')
+    time_needed = Cpt(EpicsSignal, '.TMOV', kind='omitted')
 
     def __init__(self, prefix='', *, name, kind=None, read_attrs=None,
                  configuration_attrs=None, parent=None, **kwargs):
