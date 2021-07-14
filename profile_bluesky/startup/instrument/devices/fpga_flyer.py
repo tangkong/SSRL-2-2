@@ -153,11 +153,6 @@ class CXASFlyer(FPGABox, FlyerInterface):
             # config attrs kinda broken at the moment?  Disabling works
                             #configuration_attrs=config_attrs, read_attrs=read_attrs, **kwargs)
 
-    def stage(self):
-        # will apply stage sig via Device -> BlueskyInterface 
-        super().stage()
-        return
-
     def kickoff(self):
         logger.info("kickoff()")
         self.kickoff_status = ophyd.DeviceStatus(self)
