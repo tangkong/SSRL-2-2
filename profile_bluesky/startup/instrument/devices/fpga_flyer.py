@@ -186,7 +186,7 @@ class CXASFlyer(FPGABox, FlyerInterface):
 
         # Kickoff activity here. Set up activity that runs when PV's update
         # set up fly scan configuration.  Eventually record as stage_sigs
-        self.trigger_source.put(3)
+        self.stage_sigs[self.trigger_source] = 3
 
         # set up stage sigs
         self.stage_sigs[self.phi.spmg] = 2 # set motors to synchronize
@@ -198,19 +198,24 @@ class CXASFlyer(FPGABox, FlyerInterface):
         self.trigger_ctr = 0
 
         if self.use_x3.get():
-            self.dout1_type.put(0)
-            self.dout1_control.put(4)
-            self.dout1_width.put(8) # probably not the right setting for all
+            self.stage_sigs[self.dout1_type] = 0
+            self.stage_sigs[self.dout1_control] = 4
+            self.stage_sigs[self.dout1_width] = 8 # ms,  probably not the right setting for all
             # need to make sure this time fits between triggers
             # TO-DO: Set this dynamically based on trajectory list?
 
-            self.x3.total_points.put(self.trigger_len)
-            self.x3.stage() # load stage sigs, assuming external trigger  
+            self.x3.total_points.put(self.trigger_len) 
             self.x3.prep_asset_docs() # generate all asset documents
             self.frame_ctr = 0
 
             # once we're set up, ready x3 to receive trigger signals
-            self.x3.settings.acquire.put(1)
+            # Normally don't begin acquisition through stage sigs, 
+            # but triggering here is dictated by FPGA externally
+            self.stage_sigs[self.x3.settings.acquire] = 1
+            self.stage_sigs[self.x3.hdf5.capture] = 1 
+
+        # stage self and components (x3)
+        self.stage()
 
         # sub before to make sure we don't miss any data?
         self.data.subscribe(self._data_update)
@@ -275,15 +280,18 @@ class CXASFlyer(FPGABox, FlyerInterface):
         TO-DO: Differentiate between fly scan and step scan config?  Maybe this 
                 is only for step scan?
         """
-        return
+        ret = super().stage()
+        return ret 
 
     def unstage(self):
         """ unstage: return configuration to resting state
         TO-DO: Determine what resting state is
         turn off x3 collection, h5 plugin
         move motors back to original location
+        Will undo stage_sigs in reverse order 
         """
-        return
+        ret = super.unstage()
+        return ret
 
     def _setup_describe_collect(self):
         """ set up data schema  """
@@ -455,7 +463,8 @@ class CXASFlyer(FPGABox, FlyerInterface):
 
     def collect_asset_docs(self):
         """ default to the asset docs in x3? """
-        yield from self.x3.collect_asset_docs()
+        if self.use_x3.get():
+            yield from self.x3.collect_asset_docs()        
 
     def set_trajectory(self, 
         traj_file_path=Path(__file__).parent / 'fpga_motion' / 'Cu_XANES.tra'):
