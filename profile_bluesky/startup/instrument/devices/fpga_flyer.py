@@ -144,11 +144,6 @@ class CXASFlyer(FPGABox, FlyerInterface):
 
         self.buffer_dict = []
 
-        # TO-DO: configuration PV's to keep track of, for derived data
-        if config_attrs is None:
-            config_attrs = ['trigger_width', 'trigger_base_rate']
-        if read_attrs is None: 
-            read_attrs = []
         super().__init__(prefix, **kwargs) 
             # config attrs kinda broken at the moment?  Disabling works
                             #configuration_attrs=config_attrs, read_attrs=read_attrs, **kwargs)
