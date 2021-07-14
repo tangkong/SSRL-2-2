@@ -543,3 +543,6 @@ class CXASFlyer(FPGABox, FlyerInterface):
         self.z2.profile_list.put(self.motion_Z_list)
 
 flyer = CXASFlyer('BL22:SCAN:MASTER', name='flyer') #, configuration_attrs=['trigger_width'])
+
+# add configuration attrs
+flyer.configuration_attrs.extend(['dout1_width', 'trigger_width', 'trigger_base_rate'])
