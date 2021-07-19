@@ -280,7 +280,7 @@ class CXASFlyer(FPGABox, FlyerInterface):
         move motors back to original location
         Will undo stage_sigs in reverse order 
         """
-        ret = super.unstage()
+        ret = super().unstage()
         return ret
 
     def _setup_describe_collect(self):
@@ -294,7 +294,7 @@ class CXASFlyer(FPGABox, FlyerInterface):
        
         # construct the schema
         dd = {}
-        dd.update({'time':d})
+        dd.update({'cycletime':d})
         dd.update({'gate':d})
         dd.update({f'motor_{i}':d for i in range(self.num_motor.item())})
         dd.update({f'adc_{i}':d for i in range(self.num_adc.item())})
@@ -327,7 +327,7 @@ class CXASFlyer(FPGABox, FlyerInterface):
             self.data.unsubscribe_all()
             self.trigger_signal.unsubscribe_all()
 
-
+            self.unstage()
             if self.use_x3.get():
                 self.x3.unstage()
                 # stop file writing
@@ -374,7 +374,6 @@ class CXASFlyer(FPGABox, FlyerInterface):
         Could have frame info change between collections, so be sure to update
         """
         logging.info('_data_update()')
-        print('_data_update()')
         self._info_update()
 
         pv_data = self.data.get()
@@ -418,7 +417,7 @@ class CXASFlyer(FPGABox, FlyerInterface):
         for frame in range(self.num_frames.item()):
             self.trigger_ctr +=1
             curr_frame = {}
-            curr_frame.update({'time': self.time[frame]})
+            curr_frame.update({'cycletime': self.time[frame]})
             curr_frame.update({'gate': self.gate[frame]})
             curr_frame.update({f'adc_{i}': self.adc[frame*self.num_adc.item()+i] 
                                 for i in range(self.num_adc.item())})
