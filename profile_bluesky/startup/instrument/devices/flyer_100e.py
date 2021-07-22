@@ -537,7 +537,7 @@ class CXAS100EFlyer(FPGABox, FlyerInterface):
         self.z1.profile_list.put(self.motion_Z_list)
         self.z2.profile_list.put(self.motion_Z_list)
 
-flyer100E = CXAS100EFlyer('BL22:SCAN:MASTER', name='flyer') #, configuration_attrs=['trigger_width'])
+flyer100E = CXAS100EFlyer('BL93:SCAN:MASTER', name='flyer') #, configuration_attrs=['trigger_width'])
 
 # add configuration attrs
 flyer100E.configuration_attrs.extend(['dout1_width', 'trigger_width', 'trigger_base_rate'])
