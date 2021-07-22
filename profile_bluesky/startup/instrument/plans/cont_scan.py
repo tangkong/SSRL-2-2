@@ -1,8 +1,9 @@
 import logging
-
 logger = logging.getLogger()
             
 import bluesky.plan_stubs as bps
+from bluesky.preprocessors import inject_md_decorator
+from ..devices.stages import px, py
 
 def fly_plan(flyer, *, md=None):
     """
@@ -36,3 +37,14 @@ def fly_plan(flyer, *, md=None):
 
     yield from bps.close_run()
     return uid
+
+@inject_md_decorator({'macro_name': 'fly_list'})
+def fly_list(flyer, locs, md={}):
+    uids = []
+    for i in range(len(locs[0])):
+        yield from bps.mv(px, locs[0][i])
+        yield from bps.mv(py, locs[1][i])
+        uid = yield from fly_plan(flyer, md={'x':locs[0][i], 'y':locs[1][i]})
+        uids.append(uid)
+
+    return uids
