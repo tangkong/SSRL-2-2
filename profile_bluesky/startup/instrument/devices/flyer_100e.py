@@ -18,13 +18,12 @@ from ophyd.sim import det
 from ophyd.flyers import FlyerInterface
 
 from .dxp import Dxp
-from .misc_devices import CXASEpicsMotor
 from .xspress3 import xsp3
 from .fpga_flyer import FPGABox
 
 logger = logging.getLogger()
 
-__all__ = ['flyer']
+__all__ = ['flyer100E']
 
 so_eval_path = Path(__file__).parent / 'fpga_eval' / 'omFpgaEval.so'
 fpga_eval_lib = ctypes.cdll.LoadLibrary(so_eval_path)
@@ -538,7 +537,7 @@ class CXAS100EFlyer(FPGABox, FlyerInterface):
         self.z1.profile_list.put(self.motion_Z_list)
         self.z2.profile_list.put(self.motion_Z_list)
 
-flyer = CXAS100EFlyer('BL22:SCAN:MASTER', name='flyer') #, configuration_attrs=['trigger_width'])
+flyer100E = CXAS100EFlyer('BL22:SCAN:MASTER', name='flyer') #, configuration_attrs=['trigger_width'])
 
 # add configuration attrs
-flyer.configuration_attrs.extend(['dout1_width', 'trigger_width', 'trigger_base_rate'])
+flyer100E.configuration_attrs.extend(['dout1_width', 'trigger_width', 'trigger_base_rate'])
