@@ -299,7 +299,7 @@ class CXAS100EFlyer(FPGABox, FlyerInterface):
                                             # with source?
 
         self.desc = {self.name: dd,
-                    '100E': dd_100e}
+                    'DXP_100E': dd_100e}
 
     def _trigger_changed(self, value=None, old_value=None, **kwargs):
         "This is called when the 'trigger_signal' changes."
