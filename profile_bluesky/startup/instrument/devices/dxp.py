@@ -11,7 +11,7 @@ omDxpLib = ctypes.cdll.LoadLibrary(dxp_path)
 
 class DxpData(ctypes.Structure):
     _fields_ = [    ("lenData",         ctypes.c_uint),
-                    ("data",            ctypes.POINTER(ctypes.c_int)),
+                    ("data",            ctypes.POINTER(ctypes.c_double)),
                     
                     ("numPixel",        ctypes.POINTER(ctypes.c_uint)),
                     
@@ -23,10 +23,10 @@ class DxpData(ctypes.Structure):
                     ("icr",             ctypes.POINTER(ctypes.c_double)),
                     ("ocr",             ctypes.POINTER(ctypes.c_double)),
                     
-                    ("mcaLen",          ctypes.POINTER(ctypes.c_uint)),
-                    ("mca",             ctypes.POINTER(ctypes.c_int)),
+                    ("mcaLen",          ctypes.POINTER(ctypes.c_int)),
+                    ("mca",             ctypes.POINTER(ctypes.c_uint)),
                                         
-                    ("lastErrorCode",   ctypes.POINTER(ctypes.c_uint))]
+                    ("lastErrorCode",   ctypes.POINTER(ctypes.c_int))]
 
 
 
@@ -71,16 +71,17 @@ class Dxp(Device):
         n_det_elem = self.num_detector_elems.get()
 
         # parse frame data
-        numPixel        = np.zeros(1, np.uint32)
-        element            = np.zeros(n_buf_pix * n_det_elem, np.uint32)
-        pixel            = np.zeros(n_buf_pix * n_det_elem, np.uint32)
+        numPixel        = np.zeros(1,                      np.uint32)
+        element         = np.zeros(n_buf_pix * n_det_elem, np.uint32)
+        pixel           = np.zeros(n_buf_pix * n_det_elem, np.uint32)
         liveTime        = np.zeros(n_buf_pix * n_det_elem, np.float64)
         realTime        = np.zeros(n_buf_pix * n_det_elem, np.float64)
-        icr                = np.zeros(n_buf_pix * n_det_elem, np.float64)
-        ocr                = np.zeros(n_buf_pix * n_det_elem, np.float64)
-        mcaLen            = np.zeros(n_buf_pix * n_det_elem, np.int32)
-        mca                = np.zeros(n_buf_pix * n_det_elem * self.max_MCA_length, np.uint32)
-        lastErrorCode    = np.zeros(1, np.uint32)
+        icr             = np.zeros(n_buf_pix * n_det_elem, np.float64)
+        ocr             = np.zeros(n_buf_pix * n_det_elem, np.float64)
+        mcaLen          = np.zeros(n_buf_pix * n_det_elem, np.int32)
+        mca             = np.zeros(n_buf_pix * n_det_elem * self.max_MCA_length, 
+                                                           np.uint32)
+        lastErrorCode   = np.zeros(1, np.int32)
 
         dxp_data = DxpData( 0,
                             np.ctypeslib.as_ctypes(pv_data),

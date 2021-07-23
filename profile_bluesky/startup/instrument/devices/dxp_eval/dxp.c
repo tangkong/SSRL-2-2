@@ -1,5 +1,45 @@
 #include "dxp.h"
 
+
+void test(TestBuffer *dxpBufferData)
+{	
+	int rt;
+	unsigned int mod_num_tot = 0;
+
+	//*dxpBufferData->lastErrorCode = (int)dxpBufferData->data[1];			
+	
+	int i;
+
+	unsigned int myBufferLen = (int)dxpBufferData->data[0];
+	unsigned int *myBuffer = (unsigned int*)calloc(myBufferLen, sizeof(unsigned int));
+	if(myBuffer == NULL)	
+	{
+		*dxpBufferData->lastErrorCode = -11;					// calloc failed
+		return;
+	}
+
+	for(i = 0; i < myBufferLen - 1; i++)
+	{
+		myBuffer[i] = (int)dxpBufferData->data[i + 1];
+	}
+
+	
+	/*
+	rt = DxpDataGetModNum(myBuffer, len, &mod_num_tot);
+	if (rt < 0)
+	{
+		*dxpBufferData->lastErrorCode = -1;					// DxpDataGetModNum failed
+		free(myBuffer);
+		return;
+	}	
+	*dxpBufferData->lastErrorCode = mod_num_tot;
+	*/
+	
+	
+	free(myBuffer);
+	return;
+}
+
 void EvalDxpData(DxpBufferData *dxpBufferData)
 {
 	int rt;
@@ -35,38 +75,63 @@ void EvalDxpData(DxpBufferData *dxpBufferData)
 	unsigned int triggers;
 	unsigned int output_events;
 	
+	
+	
+	
+	//##############################################################
+	// copy "dxpBuffer->data", which is an array of doubles to "myBuffer", which is an array of unsigned integers
+	// while copying skip the first element, which contains the actual length of the array
+	// 'myBuffer' needs to be freed before this function returns !!!
+	//##############################################################
+	unsigned int myBufferLen = (int)dxpBufferData->data[0];	
+	unsigned int *myBuffer = (unsigned int*)calloc(myBufferLen, sizeof(unsigned int));
+	if(myBuffer == NULL)	
+	{
+		*dxpBufferData->lastErrorCode = -11;					// calloc failed
+		return;
+	}
+
+	for(i = 0; i < myBufferLen - 1; i++)
+	{
+		myBuffer[i] = (int)dxpBufferData->data[i + 1];
+	}	
+	//##############################################################
+	
+
 		
-	rt = DxpDataGetModNum(dxpBufferData->data, dxpBufferData->lenData, &mod_num_tot);
+	rt = DxpDataGetModNum(myBuffer, myBufferLen, &mod_num_tot);
 	if (rt < 0)
 	{
 		*dxpBufferData->lastErrorCode = -1;					// DxpDataGetModNum failed
+		free(myBuffer);
 		return;
 	}
 	
 	
-	num_pix_buf		=	dxpBufferData->data[8];				// number of pixels in buffer
-	start_pix_num	=	dxpBufferData->data[10] << 16 |		// starting pixel number
-						dxpBufferData->data[9];
+	num_pix_buf		=	myBuffer[8];				// number of pixels in buffer
+	start_pix_num	=	myBuffer[10] << 16 |		// starting pixel number
+						myBuffer[9];
 
 	start_pix		= start_pix_num;
 	stop_pix		= start_pix_num + num_pix_buf;
 
 
 	// check the the Buffer-Header and the very first Pixel-Buffer-Header
-	if (	dxpBufferData->data[0] != 0x55AA ||
-			dxpBufferData->data[1] != 0xAA55 ||
-			dxpBufferData->data[256] != 0x33CC ||
-			dxpBufferData->data[257] != 0xCC33)
+	if (	myBuffer[0] != 0x55AA ||
+			myBuffer[1] != 0xAA55 ||
+			myBuffer[256] != 0x33CC ||
+			myBuffer[257] != 0xCC33)
 	{
-		*dxpBufferData->lastErrorCode = -2;					// Buffer header is corrupt		
+		*dxpBufferData->lastErrorCode = -2;					// Buffer header is corrupt
+		free(myBuffer);		
 		return;
 	}
 
 	
 	// Read some information off the the Buffer-Header and off the very first Pixel-Buffer-Header 		
-	BufHeadLen = dxpBufferData->data[2];					// 2	Buffer Header Size
-	PixHeadLen = dxpBufferData->data[BufHeadLen + 2];		// 2	Buffer Header Size (within Pixel Buffer)		
-	NumChanLen = dxpBufferData->data[BufHeadLen + 8];		// 8	Channel Size, Number of ROI
+	BufHeadLen = myBuffer[2];					// 2	Buffer Header Size
+	PixHeadLen = myBuffer[BufHeadLen + 2];		// 2	Buffer Header Size (within Pixel Buffer)		
+	NumChanLen = myBuffer[BufHeadLen + 8];		// 8	Channel Size, Number of ROI
 
 	
 	
@@ -101,7 +166,8 @@ void EvalDxpData(DxpBufferData *dxpBufferData)
 	}
 	else
 	{		
-		*dxpBufferData->lastErrorCode = -3;						// Buffer header length is invalid	
+		*dxpBufferData->lastErrorCode = -3;						// Buffer header length is invalid
+		free(myBuffer);		
 		return;
 	}
 	
@@ -117,17 +183,19 @@ void EvalDxpData(DxpBufferData *dxpBufferData)
 			second_offset = ((PixHeadLen + (WdLen * CHA_PER_MOD * NumChanLen)) * (unsigned int)pix_num_ctr) + BufHeadLen;
 
 			// Check if the 'first_offset' points to a Buffer
-			if (dxpBufferData->data[first_offset] != 0x55AA)
+			if (myBuffer[first_offset] != 0x55AA)
 			{				
 				*dxpBufferData->lastErrorCode = -4;				//firts_offset points in the wrong direction
+				free(myBuffer);
 				return;
 			}
 
 			// Check if the 'second_offset' points to Pixel-Buffer
-			if (dxpBufferData->data[first_offset + second_offset] != 0x33CC)
+			if (myBuffer[first_offset + second_offset] != 0x33CC)
 			{
 				
 				*dxpBufferData->lastErrorCode = -5;				// second_offset points in the wrong direction
+				free(myBuffer);
 				return;
 			}
 
@@ -141,17 +209,17 @@ void EvalDxpData(DxpBufferData *dxpBufferData)
 				dest_offset	= (unsigned int)(mod_num_tot * CHA_PER_MOD * (unsigned int)pix_num_ctr + mod_num_ctr * CHA_PER_MOD + chan_num_ctr);
 
 
-				realtime =		dxpBufferData->data[first_offset + second_offset + third_offset + (unsigned int)(chan_num_ctr * 8) + 1] << 16 |
-								dxpBufferData->data[first_offset + second_offset + third_offset + (unsigned int)(chan_num_ctr * 8) + 0];
+				realtime =		myBuffer[first_offset + second_offset + third_offset + (unsigned int)(chan_num_ctr * 8) + 1] << 16 |
+								myBuffer[first_offset + second_offset + third_offset + (unsigned int)(chan_num_ctr * 8) + 0];
 
-				livetime =		dxpBufferData->data[first_offset + second_offset + third_offset + (unsigned int)(chan_num_ctr * 8) + 3] << 16 |
-								dxpBufferData->data[first_offset + second_offset + third_offset + (unsigned int)(chan_num_ctr * 8) + 2];
+				livetime =		myBuffer[first_offset + second_offset + third_offset + (unsigned int)(chan_num_ctr * 8) + 3] << 16 |
+								myBuffer[first_offset + second_offset + third_offset + (unsigned int)(chan_num_ctr * 8) + 2];
 
-				triggers =		dxpBufferData->data[first_offset + second_offset + third_offset + (unsigned int)(chan_num_ctr * 8) + 5] << 16 |
-								dxpBufferData->data[first_offset + second_offset + third_offset + (unsigned int)(chan_num_ctr * 8) + 4];
+				triggers =		myBuffer[first_offset + second_offset + third_offset + (unsigned int)(chan_num_ctr * 8) + 5] << 16 |
+								myBuffer[first_offset + second_offset + third_offset + (unsigned int)(chan_num_ctr * 8) + 4];
 
-				output_events =	dxpBufferData->data[first_offset + second_offset + third_offset + (unsigned int)(chan_num_ctr * 8) + 7] << 16 |
-								dxpBufferData->data[first_offset + second_offset + third_offset + (unsigned int)(chan_num_ctr * 8) + 6];
+				output_events =	myBuffer[first_offset + second_offset + third_offset + (unsigned int)(chan_num_ctr * 8) + 7] << 16 |
+								myBuffer[first_offset + second_offset + third_offset + (unsigned int)(chan_num_ctr * 8) + 6];
 
 				if (WdLen == 1)		// MCA Data
 				{
@@ -167,7 +235,7 @@ void EvalDxpData(DxpBufferData *dxpBufferData)
 
 					for (i = 0; i < (int)NumChanLen; i++)
 					{
-						dxpBufferData->mca[dest_offset * NumChanLen + i] = dxpBufferData->data[first_offset + second_offset + third_offset + (unsigned int)(chan_num_ctr * NumChanLen) + i];
+						dxpBufferData->mca[dest_offset * NumChanLen + i] = myBuffer[first_offset + second_offset + third_offset + (unsigned int)(chan_num_ctr * NumChanLen) + i];
 					}
 				}
 				else if (WdLen == 2)	// SCA Data
@@ -184,15 +252,16 @@ void EvalDxpData(DxpBufferData *dxpBufferData)
 
 					for (i = 0; i < (int)NumChanLen; i++)
 					{
-						dxpBufferData->mca[dest_offset * NumChanLen + i] =	dxpBufferData->data[first_offset + second_offset + third_offset + (unsigned int)(2 * chan_num_ctr * NumChanLen) + (unsigned int)(2 * i) + 1] << 16 |
-																			dxpBufferData->data[first_offset + second_offset + third_offset + (unsigned int)(2 * chan_num_ctr * NumChanLen) + (unsigned int)(2 * i)];
+						dxpBufferData->mca[dest_offset * NumChanLen + i] =	myBuffer[first_offset + second_offset + third_offset + (unsigned int)(2 * chan_num_ctr * NumChanLen) + (unsigned int)(2 * i) + 1] << 16 |
+																			myBuffer[first_offset + second_offset + third_offset + (unsigned int)(2 * chan_num_ctr * NumChanLen) + (unsigned int)(2 * i)];
 					}
 				}
 			}
 		}
 	}
 	
-	*dxpBufferData->lastErrorCode = 1;	
+	*dxpBufferData->lastErrorCode = 1;
+	free(myBuffer);	
 }
 
 int DxpDataGetModNum(unsigned int* _buffer, unsigned int _buffer_len, unsigned int* _mod_num_tot)
