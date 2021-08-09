@@ -1,0 +1,23 @@
+#----------------------------------------
+ELEMENT:	Co  27
+EDGE:	K
+N_POINTS:	5000
+EDGE_ENERGY:	7708.9	*
+START_ENERGY:	 7508.9
+END_ENERGY:	8684.2554130251
+END_K:	16	*
+#----------------------------------------
+CRYSTAL:	Si(220)
+LATTICE:	1.9202	*
+START_PHI:	25.4641106434882	*
+END_PHI:	21.8239181751025	*
+#----------------------------------------
+N_SCALING:	2
+K_0:	4
+K_0_DOT:	1
+#----------------------------------------
+F_TTA:	0.1
+F_TEM:	0.995
+F_TTD:	0.01
+#----------------------------------------
+# * These values are dependents. Changes to these values within this file will be ignored

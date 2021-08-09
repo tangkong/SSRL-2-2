@@ -281,7 +281,7 @@ void EvalFpgaData(FpgaFrameData *fpgaFrameData)
 		//--- read ENCODERs --- 4 words ---
 		for (i = 0; i < num_encoders; i++)
 		{			
-			fpgaFrameData->encoder[i + n * num_encoders] = fpgaFrameData->data[offset_encoder + i] + 0x7FFFFFFF;
+			fpgaFrameData->encoder[i + n * num_encoders] = -1 * (fpgaFrameData->data[offset_encoder + i] + 0x7FFFFFFF);
 		}
 
 

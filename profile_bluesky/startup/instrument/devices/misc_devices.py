@@ -54,8 +54,7 @@ class CXASEpicsMotor(Device, PositionerBase):
         The default timeout to use for motion requests, in seconds.
     '''
     # position
-    user_readback = Cpt(EpicsSignalRO, '.RBV', kind='hinted',
-                        auto_monitor=True)
+    user_readback = Cpt(EpicsSignalRO, '.RBV')
     user_setpoint = Cpt(EpicsSignal, '.VAL', limits=True)
 
     # calibration dial <-> user

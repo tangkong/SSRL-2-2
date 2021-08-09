@@ -400,7 +400,7 @@ int calc_motion(	double *_time,
 	//-------------------------------------------------------------------
 	// Header
 	phi_motion_uint[0] = (unsigned int)(num_seg & 0x1fff);														// 13 bits						bit 0 - 12	number of segments;	
-	//phi_motion_uint[0] |= (1 << 31);																			// 1 bit						bit 31		initial direction: 0 - CW, 1 - CCW
+	phi_motion_uint[0] |= (1 << 31);																			// 1 bit						bit 31		initial direction: 0 - CW, 1 - CCW
 	phi_motion_uint[1] = 0;
 
 	for (i = 0; i < num_seg; i++) {

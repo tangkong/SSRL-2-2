@@ -140,7 +140,7 @@ class CXASFlyer(FPGABox, FlyerInterface):
         self.complete_status = None
         self.t0 = time.time()
         self.last_update_time = None
-        self.traj_file_path=Path(__file__).parent / 'fpga_motion' / 'Cu_XANES.tra'
+        self.traj_file_path=Path(__file__).parent / 'fpga_motion' / 'Co_XANES_2kpts.tra'
 
         self.buffer_dict = []
 
@@ -180,11 +180,10 @@ class CXASFlyer(FPGABox, FlyerInterface):
 
         # set up stage sigs
         self.stage_sigs[self.phi.spmg] = 2 # set motors to synchronize
-        self.stage_sigs[self.z1.spmg] = 2 # set motors to synchronize
-        self.stage_sigs[self.z2.spmg] = 2 # set motors to synchronize
+        #self.stage_sigs[self.z1.spmg] = 2 # set motors to synchronize
+        #self.stage_sigs[self.z2.spmg] = 2 # set motors to synchronize
         # ...
 
-        self.load_trajectory()
         self.trigger_ctr = 0
 
         if self.use_x3.get():
@@ -194,18 +193,22 @@ class CXASFlyer(FPGABox, FlyerInterface):
             # need to make sure this time fits between triggers
             # TO-DO: Set this dynamically based on trajectory list?
 
+        # apply stage sigs to self and components (x3)
+        self.stage()
+        
+        self.load_trajectory()
+        if self.use_x3.get():
             self.x3.total_points.put(self.trigger_len) 
+            self.x3.stage()
             self.x3.prep_asset_docs() # generate all asset documents
             self.frame_ctr = 0
 
             # once we're set up, ready x3 to receive trigger signals
             # Normally don't begin acquisition through stage sigs, 
             # but triggering here is dictated by FPGA externally
-            self.stage_sigs[self.x3.settings.acquire] = 1
-            self.stage_sigs[self.x3.hdf5.capture] = 1 
+            self.x3.settings.acquire.put(1)
+            #self.stage_sigs[self.x3.hdf5.capture] = 1 
 
-        # stage self and components (x3)
-        self.stage()
 
         # sub before to make sure we don't miss any data?
         self.data.subscribe(self._data_update)
@@ -528,10 +531,10 @@ class CXASFlyer(FPGABox, FlyerInterface):
 
         self.trigger_profile_list.put(self.trigger_list)
         self.phi.profile_list.put(self.motion_phi_list)
-        self.z1.profile_list.put(self.motion_Z_list)
-        self.z2.profile_list.put(self.motion_Z_list)
+        #self.z1.profile_list.put(self.motion_Z_list)
+        #self.z2.profile_list.put(self.motion_Z_list)
 
-flyer = CXASFlyer('BL22:SCAN:MASTER', name='flyer') #, configuration_attrs=['trigger_width'])
+flyer = CXASFlyer('BL93:SCAN:MASTER', name='flyer') #, configuration_attrs=['trigger_width'])
 
 # add configuration attrs
 flyer.configuration_attrs.extend(['dout1_width', 'trigger_width', 'trigger_base_rate'])

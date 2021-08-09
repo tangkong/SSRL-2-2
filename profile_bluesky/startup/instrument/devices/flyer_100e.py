@@ -4,6 +4,8 @@ import time
 from pathlib import Path
 import ctypes
 
+import re
+
 import numpy as np
 import pandas as pd
 
@@ -17,9 +19,11 @@ from ophyd.signal import EpicsSignal, Signal
 from ophyd.sim import det
 from ophyd.flyers import FlyerInterface
 
+import time as ttime
 from .dxp import Dxp
-from .xspress3 import xsp3
-from .fpga_flyer import FPGABox
+from .misc_devices import CXASEpicsMotor
+#from .xspress3 import xsp3
+#from .fpga_flyer import FPGABox
 
 logger = logging.getLogger()
 
@@ -94,6 +98,30 @@ class FpgaMotion(ctypes.Structure):
                     ("motionZLen",        ctypes.POINTER(ctypes.c_uint)),
                     
                     ("lastErrorCode",    ctypes.POINTER(ctypes.c_int))]
+class FPGABox(Device):
+    """
+    Device to be subclassed for fpga continuous scan
+    Contains the relevant PV's for the FPGA continuous scan box
+    """ 
+    # signals to interact with
+    data = Cpt(EpicsSignal, '.DATA')
+    trigger_signal = Cpt(EpicsSignal, '.TRIG')
+
+    # configuration signals
+    trigger_profile_list = Cpt(EpicsSignal, '.TLST')
+    trigger_width = Cpt(EpicsSignal, '.TWID')
+    trigger_base_rate = Cpt(EpicsSignal, '.TBRT')
+    trigger_source = Cpt(EpicsSignal, '.TSRC')
+
+    dout1_type = Cpt(EpicsSignal, '.OTP1')
+    dout1_control = Cpt(EpicsSignal, '.DO1') 
+
+    dout1_width = Cpt(EpicsSignal, '.OWD1')
+
+    phi = Cpt(CXASEpicsMotor, ':MOTOR1') # mono
+    z1 = Cpt(CXASEpicsMotor, ':MOTOR3') # should be synced with z2
+    z2 = Cpt(CXASEpicsMotor, ':MOTOR4')
+
 
 # Based off of implementations by: 
 # https://blueskyproject.io/tutorials/Flyer%20Basics.html
@@ -107,7 +135,7 @@ class CXAS100EFlyer(FPGABox, FlyerInterface):
     flyer = CXASFlyer('BL93:SCAN:MASTER', name='flyer')
     """
     use_x3 = Cpt(Signal, value=0, doc='Enabling x3 in this flyer')
-    x3 = xsp3
+    x3 = 1# xsp3
 
     dxp1 = Dxp('DXP1:DXP', name='dxp1')
     dxp2 = Dxp('DXP2:DXP', name='dxp2')
@@ -119,8 +147,8 @@ class CXAS100EFlyer(FPGABox, FlyerInterface):
         self.kickoff_status = None
         self.complete_status = None
         self.last_update_time = None
-        self.traj_file_path=Path(__file__).parent / 'fpga_motion' / 'Cu_XANES.tra'
-
+        self.traj_file_path=Path(__file__).parent / 'fpga_motion' / 'Co_XANES_1kpts_41s.tra'
+        self.dxp_list = [self.dxp1, self.dxp2, self.dxp3]
         self.buffer_dict = []
 
         super().__init__(prefix, **kwargs) 
@@ -158,12 +186,18 @@ class CXAS100EFlyer(FPGABox, FlyerInterface):
         self.stage_sigs[self.trigger_source] = 3
 
         # set up stage sigs
+        self.stage_sigs[self.phi.user_setpoint] = self.phi.user_readback.get()
         self.stage_sigs[self.phi.spmg] = 2 # set motors to synchronize
-        self.stage_sigs[self.z1.spmg] = 2 # set motors to synchronize
-        self.stage_sigs[self.z2.spmg] = 2 # set motors to synchronize
+        #self.stage_sigs[self.z1.spmg] = 2 # set motors to synchronize
+        #self.stage_sigs[self.z2.spmg] = 2 # set motors to synchronize
         # ...
+        
+        # stage sigs for 100E cont scan
+        self.stage_sigs[self.dout1_type] = 0
+        self.stage_sigs[self.dout1_control] = 4
+        self.stage_sigs[self.dout1_width] = 999 
+        # .TPSK = 99, but that will not change for now
 
-        self.load_trajectory()
         self.trigger_ctr = 0
 
         if self.use_x3.get():
@@ -173,7 +207,7 @@ class CXAS100EFlyer(FPGABox, FlyerInterface):
             # need to make sure this time fits between triggers
             # TO-DO: Set this dynamically based on trajectory list?
 
-            self.x3.total_points.put(self.trigger_len) 
+            self.x3.total_points.put(self.trigger_len*1.2) 
             self.x3.prep_asset_docs() # generate all asset documents
             self.frame_ctr = 0
 
@@ -186,11 +220,28 @@ class CXAS100EFlyer(FPGABox, FlyerInterface):
         # stage self and components (x3)
         self.stage()
 
+        self.load_trajectory()
+
+        # arm DXP's, could find a better way to do this with stage_sigs
+        self.dxp_finished = [False, False, False]
+        for dxp in self.dxp_list:
+            dxp.num_map_pixels.put(len(self.time_list))
+            dxp.update_dxp.put(1)
+            dxp.curr_buff_pixels = None
+            dxp.curr_num_elems  = None
+            ttime.sleep(1)
+            dxp.start_acquire.put(1)
+            ttime.sleep(1)
+
         # sub before to make sure we don't miss any data?
         self.data.subscribe(self._fpga_data_update)
         self.dxp1.data.subscribe(self._dxp_data_update)
         self.dxp2.data.subscribe(self._dxp_data_update)
         self.dxp3.data.subscribe(self._dxp_data_update)
+
+        self.dxp1.start_acquire.subscribe(self._dxp_acquire_finish)
+        self.dxp2.start_acquire.subscribe(self._dxp_acquire_finish)
+        self.dxp3.start_acquire.subscribe(self._dxp_acquire_finish)
 
         self.trigger_signal.put(2)
         # for some reason, callback fires once sub'd, so place after
@@ -222,10 +273,12 @@ class CXAS100EFlyer(FPGABox, FlyerInterface):
         logger.info("collect()")
         # yield dictionary to bluesky
         # clear data dictionary
-        d = self.buffer_dict
-        self.buffer_dict = []
-        for subd in d:
+        #d = self.buffer_dict
+        #self.buffer_dict = []
+        print(f'collect({len(self.buffer_dict)})')
+        for subd in self.buffer_dict:
             yield subd
+        self.buffer_dict=[]
 
     def trigger(self):
         """ trigger: Capture a single frame, write to buffer dict. 
@@ -263,6 +316,19 @@ class CXAS100EFlyer(FPGABox, FlyerInterface):
         move motors back to original location
         Will undo stage_sigs in reverse order 
         """
+        # Also unsure when unstage would be called during a fly scan.
+        self.data.unsubscribe_all()
+        for d in self.dxp_list:
+            d.data.unsubscribe_all()
+            d.start_acquire.unsubscribe_all()
+        self.trigger_signal.unsubscribe_all()
+
+        if self.use_x3.get():
+            self.x3.unstage()
+            # stop file writing
+            self.x3.settings.acquire.put(0)
+            self.x3.hdf5.capture.put(0)
+
         ret = super().unstage()
         return ret
 
@@ -304,23 +370,14 @@ class CXAS100EFlyer(FPGABox, FlyerInterface):
     def _trigger_changed(self, value=None, old_value=None, **kwargs):
         "This is called when the 'trigger_signal' changes."
         logger.info(f'_trigger_changed(), {old_value}->{value}')
+        print('_trigger_changed')
         if self.complete_status is None:
             return
         if old_value > value: #(old_value == 1 or 2) and (value == 0):
             # Negative-going edge means an acquisition just finished.
-            self.complete_status._finished()
+            #self.complete_status._finished()
             # remove callbacks, could do this in unstage(), but wait to gather more tasks?
-            # Also unsure when unstage would be called during a fly scan.
-            self.data.unsubscribe_all()
-            self.trigger_signal.unsubscribe_all()
-
-            self.unstage()
-            if self.use_x3.get():
-                self.x3.unstage()
-                # stop file writing
-                self.x3.settings.acquire.put(0)
-                self.x3.hdf5.capture.put(0)
-
+            print('falling edge found')
     def _info_update(self):
         # initialize parameters
         self.num_frames         = np.zeros(1, np.uint32)
@@ -361,19 +418,31 @@ class CXAS100EFlyer(FPGABox, FlyerInterface):
 
         for now make multiple callbacks
         """
+        #print('dxp_data_update')
         dxp = obj.parent # get relevant dxp object.
         data_dict = dxp.get_data()
 
         time_frame = {}
-        for key in data_dict.keys():
+        for key in data_dict[0].keys():
             time_frame.update({key:timestamp})
-            
-        final_dict = {  'time':timestamp,
-                        'data':data_dict,
-                        'timestamps':time_frame
-                      }
 
-        self.buffer_dict.append(final_dict)
+        for i in range(len(data_dict)):
+            final_dict = {  'time':timestamp,
+                            'data':data_dict[i],
+                            'timestamps':time_frame
+                        }
+            self.buffer_dict.append(final_dict)
+
+    def _dxp_acquire_finish(self, value=None, obj=None, **kwargs):
+        """ if all dxps are finished, finish run """
+        if value == 0: 
+            n = int(re.findall('\d', obj.parent.name)[0])
+            print(f'dxp{n} finished collecting')
+            self.dxp_finished[n-1] = True
+         
+        if all(self.dxp_finished):
+            self.complete_status._finished()
+            print('all dxps finished')
 
     def _fpga_data_update(self, value=None, timestamp=None, **kwargs):
         """ Update in python buffer with data PV information.  
@@ -462,7 +531,7 @@ class CXAS100EFlyer(FPGABox, FlyerInterface):
             yield from self.x3.collect_asset_docs()        
 
     def set_trajectory(self, 
-        traj_file_path=Path(__file__).parent / 'fpga_motion' / 'Cu_XANES.tra'):
+        traj_file_path=Path(__file__).parent / 'fpga_motion' / 'Co_XANES_2kpts.tra'):
         self.traj_file_path = traj_file_path
 
     def load_trajectory(self):
@@ -534,8 +603,8 @@ class CXAS100EFlyer(FPGABox, FlyerInterface):
 
         self.trigger_profile_list.put(self.trigger_list)
         self.phi.profile_list.put(self.motion_phi_list)
-        self.z1.profile_list.put(self.motion_Z_list)
-        self.z2.profile_list.put(self.motion_Z_list)
+        #self.z1.profile_list.put(self.motion_Z_list)
+        #self.z2.profile_list.put(self.motion_Z_list)
 
 flyer100E = CXAS100EFlyer('BL93:SCAN:MASTER', name='flyer') #, configuration_attrs=['trigger_width'])
 

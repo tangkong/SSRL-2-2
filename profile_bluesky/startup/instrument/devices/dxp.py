@@ -41,9 +41,17 @@ class Dxp(Device):
 
     max_MCA_length = 2048
     num_buffer_pixels = Cpt(EpicsSignal, '.NumBufPix')
+    num_map_pixels = Cpt(EpicsSignal, '.NumMapPix')
+    start_acquire = Cpt(EpicsSignal, '.StartAcq') # 0:idle, 1:starting, 2:running, 3:error
+    is_armed = Cpt(EpicsSignal, '.IsArmed') # bool
+    update_dxp = Cpt(EpicsSignal, '.UpdateDxp') # 0:update req, 1:updating, 2:up-to-date, 3:error
     num_detector_elems = Cpt(EpicsSignal, '.NumDetElements')
+    first_element = Cpt(EpicsSignal, '.FirstDetElement')
     data = Cpt(EpicsSignal, '.Data') # long, serialized array holding all data
 
+    curr_buff_pixels = None
+    curr_num_elems = None
+    curr_first_elem = None
     def describe_data(self):
         d = dict(
             source = 'dxp 100E detector',
@@ -52,6 +60,7 @@ class Dxp(Device):
         )
 
         dd = {  'element': d,
+                'first_element':d,
                 'pixel': d,
                 'live_time': d,
                 'real_time': d,
@@ -60,15 +69,31 @@ class Dxp(Device):
                 'mca_length': d
             } 
         dd.update({
-                    'mca': d.update({'dtype':'array', 'shape':[-1, -1]})
+            'mca':{'source': 'dxp 100E detector',
+                   'dtype':'array',
+                   'shape':[-1, -1]} 
                   })
         
         return dd
 
     def get_data(self):
         pv_data = self.data.get()
-        n_buf_pix = self.num_buffer_pixels.get()
-        n_det_elem = self.num_detector_elems.get()
+        # try to limit access
+        if not self.curr_buff_pixels:
+            n_buf_pix = self.num_buffer_pixels.get()
+            self.curr_buff_pixels = n_buf_pix
+            print(self.curr_buff_pixels)
+        else:
+            n_buf_pix = self.curr_buff_pixels
+        if not self.curr_num_elems:
+            n_det_elem = self.num_detector_elems.get()
+            self.curr_num_elems = n_det_elem
+            print(self.curr_num_elems)
+        else:
+            n_det_elem = self.curr_num_elems
+        if not self.curr_first_elem:
+            self.curr_first_elem = self.first_element.get()
+
 
         # parse frame data
         numPixel        = np.zeros(1,                      np.uint32)
@@ -105,6 +130,7 @@ class Dxp(Device):
         for i in range( int(n_buf_pix * n_det_elem) ):
             d = {
                   'element': element[i],
+                  'first_element': self.curr_first_elem,
                   'pixel': pixel[i],
                   'live_time': liveTime[i],
                   'real_time': realTime[i],
@@ -117,4 +143,6 @@ class Dxp(Device):
             frame_dicts.append(d)
 
         # return a list of dictionaries suitable for collect()
+
+        print(self.name + '_get_data: ' + str(np.max(pixel)))
         return frame_dicts 
